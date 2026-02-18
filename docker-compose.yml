@@ -1,0 +1,53 @@
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["proxer-gateway"]
+    environment:
+      PROXER_LISTEN_ADDR: ":8080"
+      PROXER_PUBLIC_BASE_URL: "http://localhost:18080"
+      PROXER_AGENT_TOKEN: "dev-agent-token"
+      PROXER_DEV_MODE: "true"
+      PROXER_REQUEST_TIMEOUT: "30s"
+      PROXER_PROXY_REQUEST_TIMEOUT: "30s"
+      PROXER_MAX_REQUEST_BODY_BYTES: "10485760"
+      PROXER_MAX_RESPONSE_BODY_BYTES: "20971520"
+      PROXER_MAX_PENDING_PER_SESSION: "1024"
+      PROXER_MAX_PENDING_GLOBAL: "10000"
+      PROXER_PAIR_TOKEN_TTL: "10m"
+      PROXER_ADMIN_USER: "admin"
+      PROXER_ADMIN_PASSWORD: "admin123"
+      PROXER_SUPER_ADMIN_USER: "admin"
+      PROXER_SUPER_ADMIN_PASSWORD: "admin123"
+      PROXER_SESSION_TTL: "24h"
+      PROXER_STORAGE_DRIVER: "sqlite"
+      PROXER_SQLITE_PATH: "/data/proxer.db"
+      PROXER_MEMBER_WRITE_ENABLED: "true"
+      PROXER_TLS_KEY_ENCRYPTION_KEY: "dev-change-me"
+    ports:
+      - "18080:8080"
+    volumes:
+      - gateway-data:/data
+
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["proxer-agent"]
+    depends_on:
+      - gateway
+    environment:
+      PROXER_GATEWAY_BASE_URL: "http://gateway:8080"
+      PROXER_AGENT_TOKEN: "dev-agent-token"
+      PROXER_AGENT_ID: "local-agent"
+      PROXER_HEARTBEAT_INTERVAL: "10s"
+      PROXER_AGENT_REQUEST_TIMEOUT: "45s"
+      PROXER_AGENT_POLL_WAIT: "25s"
+      PROXER_MAX_RESPONSE_BODY_BYTES: "20971520"
+      PROXER_AGENT_TUNNELS: "app3000=http://host.docker.internal:3000,app5173=http://host.docker.internal:5173"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  gateway-data:

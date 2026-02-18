@@ -1,0 +1,15 @@
+.gocache/
+.gomodcache/
+*.out
+.DS_Store
+.playwright-cli/
+output/playwright/
+web/node_modules/
+web/dist/
+agentweb/node_modules/
+agentweb/dist/
+agentweb/tsconfig.tsbuildinfo
+proxer-agent
+nativeagent.test
+nativeagent.test.exe
+output/desktop/

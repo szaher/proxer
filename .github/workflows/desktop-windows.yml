@@ -1,0 +1,64 @@
+name: Desktop Windows Build
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "desktop-agent-v*"
+
+jobs:
+  build-windows-msi:
+    name: Build Windows MSI
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: agentweb/package-lock.json
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build desktop React assets
+        shell: pwsh
+        run: |
+          Set-Location agentweb
+          npm ci
+          npm run sync-native-static
+          Set-Location ..
+
+      - name: Install WiX CLI (v4)
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix --version 4.*
+          Add-Content -Path $env:GITHUB_PATH -Value "$env:USERPROFILE\.dotnet\tools"
+
+      - name: Build MSI
+        shell: pwsh
+        run: |
+          ./scripts/desktop/windows/build_msi.ps1 -Version "${{ github.ref_name }}"
+
+      - name: MSI install/uninstall smoke
+        shell: pwsh
+        run: |
+          ./scripts/desktop/windows/e2e_host_smoke.ps1 -OutputDir "output/desktop/windows"
+
+      - name: Collect release metadata
+        shell: pwsh
+        run: |
+          $msi = (Get-ChildItem output/desktop/windows/*.msi | Select-Object -First 1).FullName
+          $smoke = (Resolve-Path output/desktop/windows/smoke-help.txt).Path
+          ./scripts/desktop/windows/release_artifacts.ps1 -TargetDir "output/desktop/windows/release" -Artifacts @($msi, $smoke)
+
+      - name: Upload MSI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: proxer-agent-windows-msi
+          path: output/desktop/windows/release/

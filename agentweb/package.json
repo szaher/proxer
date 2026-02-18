@@ -1,0 +1,23 @@
+{
+  "name": "proxer-agent-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "sync-native-static": "npm run build && mkdir -p ../internal/nativeagent/static && rm -rf ../internal/nativeagent/static/* && cp -R dist/* ../internal/nativeagent/static/"
+  },
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.4.1",
+    "typescript": "^5.6.0",
+    "vite": "^5.4.0"
+  }
+}
