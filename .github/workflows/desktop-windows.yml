@@ -85,13 +85,40 @@ jobs:
           name: proxer-agent-windows-msi
           path: output/desktop/windows/release/
 
+      - name: Stage release assets for upload
+        if: github.event_name == 'release'
+        shell: pwsh
+        run: |
+          $src = "output/desktop/windows/release"
+          $dst = "output/desktop/windows/release-upload"
+          if (Test-Path $dst) {
+            Remove-Item -Path $dst -Recurse -Force
+          }
+          New-Item -ItemType Directory -Path $dst | Out-Null
+
+          $sharedNames = @(
+            "checksums.txt",
+            "release-manifest.json",
+            "release-notes.md",
+            "sbom-go.cdx.json",
+            "sbom-npm.cdx.json"
+          )
+
+          Get-ChildItem -Path $src | ForEach-Object {
+            $targetName = $_.Name
+            if ($sharedNames -contains $_.Name) {
+              $targetName = "windows-$($_.Name)"
+            }
+            Copy-Item -Path $_.FullName -Destination (Join-Path $dst $targetName)
+          }
+
       - name: Publish release assets
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.release.tag_name }}
           files: |
-            output/desktop/windows/release/*
+            output/desktop/windows/release-upload/*
           fail_on_unmatched_files: true
 
       - name: Upload Windows smoke diagnostics

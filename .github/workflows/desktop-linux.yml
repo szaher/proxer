@@ -90,7 +90,11 @@ jobs:
 
       - name: Collect release metadata
         run: |
-          APPIMAGE="$(ls -1 output/desktop/linux/*.AppImage | head -n1)"
+          APPIMAGE="$(find output/desktop/linux -maxdepth 1 -type f -name '*.AppImage' | head -n1)"
+          if [ -z "$APPIMAGE" ]; then
+            echo "missing AppImage artifact in output/desktop/linux" >&2
+            exit 1
+          fi
           ./scripts/desktop/release_artifacts.sh \
             output/desktop/linux/release \
             "$APPIMAGE" \
@@ -109,13 +113,33 @@ jobs:
           name: proxer-agent-linux-appimage
           path: output/desktop/linux/release/
 
+      - name: Stage release assets for upload
+        if: github.event_name == 'release'
+        run: |
+          set -euo pipefail
+          src="output/desktop/linux/release"
+          dst="output/desktop/linux/release-upload"
+          rm -rf "$dst"
+          mkdir -p "$dst"
+          for path in "$src"/*; do
+            name="$(basename "$path")"
+            case "$name" in
+              checksums.txt|release-manifest.json|release-notes.md|sbom-go.cdx.json|sbom-npm.cdx.json)
+                cp "$path" "$dst/linux-$name"
+                ;;
+              *)
+                cp "$path" "$dst/$name"
+                ;;
+            esac
+          done
+
       - name: Publish release assets
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.release.tag_name }}
           files: |
-            output/desktop/linux/release/*
+            output/desktop/linux/release-upload/*
           fail_on_unmatched_files: true
 
       - name: Upload Linux smoke diagnostics
