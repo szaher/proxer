@@ -10,6 +10,12 @@ jobs:
   build-macos-app:
     name: Build macOS App Bundle
     runs-on: macos-latest
+    env:
+      PROXER_CODESIGN_IDENTITY: ${{ secrets.PROXER_CODESIGN_IDENTITY }}
+      PROXER_NOTARY_PROFILE: ${{ secrets.PROXER_NOTARY_PROFILE }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,17 +40,11 @@ jobs:
 
       - name: Build macOS app bundle
         env:
-          PROXER_CODESIGN_IDENTITY: ${{ secrets.PROXER_CODESIGN_IDENTITY }}
           PROXER_APP_VERSION: ${{ github.ref_name }}
         run: ./scripts/desktop/macos/build_app.sh
 
       - name: Notarize app bundle
-        if: ${{ secrets.PROXER_NOTARY_PROFILE != '' || (secrets.APPLE_ID != '' && secrets.APPLE_TEAM_ID != '' && secrets.APPLE_APP_PASSWORD != '') }}
-        env:
-          PROXER_NOTARY_PROFILE: ${{ secrets.PROXER_NOTARY_PROFILE }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        if: ${{ env.PROXER_NOTARY_PROFILE != '' || (env.APPLE_ID != '' && env.APPLE_TEAM_ID != '' && env.APPLE_APP_PASSWORD != '') }}
         run: ./scripts/desktop/macos/notarize_app.sh
 
       - name: Package app zip

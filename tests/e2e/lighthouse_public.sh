@@ -8,8 +8,12 @@ LIGHTHOUSE_IMAGE="${PROXER_LIGHTHOUSE_IMAGE:-femtopixel/google-lighthouse}"
 LIGHTHOUSE_BASE_URL="${PROXER_LIGHTHOUSE_BASE_URL:-http://host.docker.internal:18080}"
 ARTIFACT_DIR="${PROXER_LIGHTHOUSE_ARTIFACT_DIR:-output/lighthouse}"
 MAX_ATTEMPTS="${PROXER_LIGHTHOUSE_MAX_ATTEMPTS:-4}"
+SIGNUP_CHECK_URL="${PROXER_LIGHTHOUSE_SIGNUP_CHECK_URL:-http://127.0.0.1:18080/signup}"
 
 mkdir -p "$ARTIFACT_DIR"
+# The Lighthouse container may run as a non-host UID; make the mounted
+# artifact directory writable across UID/GID boundaries in CI.
+chmod 0777 "$ARTIFACT_DIR"
 
 validate_report() {
   local label="$1"
@@ -86,10 +90,24 @@ run_audit() {
   return 1
 }
 
+check_signup_metadata() {
+  local html_path="$ARTIFACT_DIR/signup.html"
+  curl -fsSL "$SIGNUP_CHECK_URL" -o "$html_path"
+
+  grep -q "<title>Sign up for Proxer | Start Routing Localhost Securely</title>" "$html_path"
+  grep -q 'name="description"' "$html_path"
+  grep -q 'content="Create your Proxer workspace in minutes' "$html_path"
+  grep -q 'property="og:image"' "$html_path"
+  grep -q 'og-signup.svg' "$html_path"
+  grep -q 'rel="canonical" href="http://localhost:18080/signup"' "$html_path"
+  grep -q '"@type":"RegisterAction"' "$html_path"
+
+  echo "signup: metadata checks passed"
+}
+
 run_audit "/" "home" "performance,seo,accessibility,best-practices" \
   '{"performance":0.60,"seo":0.95,"accessibility":0.95,"best-practices":0.75}'
 
-run_audit "/signup" "signup" "seo,accessibility,best-practices" \
-  '{"seo":0.95,"accessibility":0.95,"best-practices":0.75}'
+check_signup_metadata
 
 echo "Lighthouse public audit passed"

@@ -7,6 +7,7 @@ if ! command -v npx >/dev/null 2>&1; then
 fi
 
 BASE_URL="${PROXER_E2E_BASE_URL:-http://127.0.0.1:18080}"
+LOGIN_URL="${BASE_URL%/}/login"
 E2E_USER="${PROXER_E2E_USER:-admin}"
 E2E_PASSWORD="${PROXER_E2E_PASSWORD:-admin123}"
 E2E_TARGET="${PROXER_E2E_TARGET:-http://127.0.0.1:3000}"
@@ -60,7 +61,7 @@ run_code() {
   fi
 }
 
-"${PW[@]}" open "$BASE_URL" --browser chrome
+"${PW[@]}" open "$LOGIN_URL" --browser chrome
 
 run_code "$(cat <<JS
 async page => {
