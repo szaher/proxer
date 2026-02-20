@@ -1,0 +1,18 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="630" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0F766E" />
+      <stop offset="1" stop-color="#0E7490" />
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" rx="24" fill="url(#bg)" />
+  <circle cx="1030" cy="120" r="170" fill="#22C55E" fill-opacity="0.24" />
+  <circle cx="180" cy="560" r="240" fill="#F97316" fill-opacity="0.2" />
+  <rect x="76" y="82" width="82" height="82" rx="20" fill="#F8FAFC" fill-opacity="0.18" />
+  <text x="97" y="136" fill="#ffffff" font-family="Avenir Next, Segoe UI, sans-serif" font-size="46" font-weight="700">P</text>
+  <text x="76" y="248" fill="#ffffff" font-family="Avenir Next, Segoe UI, sans-serif" font-size="76" font-weight="700">Proxer</text>
+  <text x="76" y="308" fill="#ECFEFF" font-family="Avenir Next, Segoe UI, sans-serif" font-size="34" font-weight="500">Localhost tunnels with SaaS governance</text>
+  <text x="76" y="406" fill="#E2E8F0" font-family="Avenir Next, Segoe UI, sans-serif" font-size="28">Connector pairing • Tenant isolation • Rate limits • TLS control</text>
+  <rect x="76" y="468" width="320" height="64" rx="32" fill="#ffffff" fill-opacity="0.12" />
+  <text x="108" y="510" fill="#ffffff" font-family="Avenir Next, Segoe UI, sans-serif" font-size="28" font-weight="600">Run locally via Docker Compose</text>
+</svg>

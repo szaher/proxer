@@ -38,7 +38,9 @@ type Server struct {
 	planStore            *PlanStore
 	rateLimiter          *RateLimiter
 	incidentStore        *IncidentStore
+	funnelAnalytics      *FunnelAnalyticsStore
 	tlsStore             *TLSStore
+	downloads            *GitHubReleaseDownloadsProvider
 	persistence          storepkg.SnapshotStore
 	forwardHTTP          *http.Client
 	maxRequestBodyBytes  int64
@@ -187,6 +189,12 @@ func NewServer(cfg Config, logger *log.Logger) *Server {
 	if cfg.MaxPendingGlobal <= 0 {
 		cfg.MaxPendingGlobal = 10000
 	}
+	if cfg.PublicSignupRPM <= 0 {
+		cfg.PublicSignupRPM = 30
+	}
+	if cfg.PublicDownloadCacheTTL <= 0 {
+		cfg.PublicDownloadCacheTTL = 15 * time.Minute
+	}
 
 	superAdminUser := strings.TrimSpace(cfg.SuperAdminUsername)
 	if superAdminUser == "" {
@@ -220,17 +228,19 @@ func NewServer(cfg Config, logger *log.Logger) *Server {
 	}
 
 	server := &Server{
-		cfg:            cfg,
-		logger:         logger,
-		hub:            hub,
-		ruleStore:      NewRuleStore(),
-		authStore:      authStore,
-		connectorStore: NewConnectorStore(cfg.PairTokenTTL),
-		planStore:      NewPlanStore(),
-		rateLimiter:    NewRateLimiter(),
-		incidentStore:  NewIncidentStore(),
-		tlsStore:       NewTLSStore(cfg.TLSKeyEncryptionKey),
-		persistence:    persistence,
+		cfg:             cfg,
+		logger:          logger,
+		hub:             hub,
+		ruleStore:       NewRuleStore(),
+		authStore:       authStore,
+		connectorStore:  NewConnectorStore(cfg.PairTokenTTL),
+		planStore:       NewPlanStore(),
+		rateLimiter:     NewRateLimiter(),
+		incidentStore:   NewIncidentStore(),
+		funnelAnalytics: NewFunnelAnalyticsStore(),
+		tlsStore:        NewTLSStore(cfg.TLSKeyEncryptionKey),
+		downloads:       NewGitHubReleaseDownloadsProvider(cfg),
+		persistence:     persistence,
 		forwardHTTP: &http.Client{
 			Transport: transport,
 		},
@@ -258,6 +268,10 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/auth/me", s.handleAuthMe)
 	mux.HandleFunc("/api/auth/register", s.handleAuthRegister)
 	mux.HandleFunc("/api/health", s.handleHealth)
+	mux.HandleFunc("/api/public/plans", s.handlePublicPlans)
+	mux.HandleFunc("/api/public/downloads", s.handlePublicDownloads)
+	mux.HandleFunc("/api/public/signup", s.handlePublicSignup)
+	mux.HandleFunc("/api/public/events", s.handlePublicAnalyticsEvent)
 	mux.HandleFunc("/api/me/dashboard", s.handleMeDashboard)
 	mux.HandleFunc("/api/me/routes", s.handleMeRoutes)
 	mux.HandleFunc("/api/me/connectors", s.handleMeConnectors)
@@ -267,6 +281,7 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/admin/stats", s.handleAdminStats)
 	mux.HandleFunc("/api/admin/incidents", s.handleAdminIncidents)
 	mux.HandleFunc("/api/admin/system-status", s.handleAdminSystemStatus)
+	mux.HandleFunc("/api/admin/analytics/funnel", s.handleAdminFunnelAnalytics)
 	mux.HandleFunc("/api/admin/plans", s.handleAdminPlans)
 	mux.HandleFunc("/api/admin/plans/", s.handleAdminPlanByID)
 	mux.HandleFunc("/api/admin/tenants/", s.handleAdminTenantsSubresource)

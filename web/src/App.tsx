@@ -1,18 +1,9 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, Suspense, lazy, useCallback, useEffect, useState } from "react";
+import { Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+
+const WorkspaceApp = lazy(() => import("./workspace/WorkspaceApp"));
 
 type Role = "super_admin" | "tenant_admin" | "member" | string;
-
-type PageKey =
-  | "dashboard"
-  | "routes"
-  | "connectors"
-  | "tenantConfig"
-  | "adminOverview"
-  | "adminUsers"
-  | "adminTenants"
-  | "adminPlans"
-  | "adminTLS"
-  | "adminSystem";
 
 interface User {
   username: string;
@@ -32,96 +23,6 @@ interface AuthMeResponse {
   tenants: Tenant[];
 }
 
-interface UsageGauge {
-  used: number;
-  limit: number;
-  percent: number;
-}
-
-interface RouteView {
-  tenant_id: string;
-  id: string;
-  connector_id?: string;
-  max_rps?: number;
-  connected?: boolean;
-  public_url?: string;
-  local_scheme?: string;
-  local_host?: string;
-  local_port?: number;
-}
-
-interface ConnectorView {
-  id: string;
-  tenant_id: string;
-  name?: string;
-  connected?: boolean;
-  agent_id?: string;
-  last_seen?: string;
-}
-
-interface DashboardPayload {
-  plan?: { id?: string; name?: string };
-  gauges?: {
-    routes?: UsageGauge;
-    connectors?: UsageGauge;
-    traffic?: UsageGauge;
-  };
-  status?: {
-    routes_active?: number;
-    routes_degraded?: number;
-    connectors_online?: number;
-    connectors_offline?: number;
-    blocked_requests_month?: number;
-  };
-  routes?: RouteView[];
-  connectors?: ConnectorView[];
-}
-
-interface AdminStatsPayload {
-  user_count?: number;
-  tenant_count?: number;
-  route_count?: number;
-  connector_count?: number;
-  active_connectors?: number;
-  storage_driver?: string;
-  uptime_seconds?: number;
-}
-
-interface SystemStatusPayload {
-  gateway?: {
-    status?: string;
-    listen_addr?: string;
-    public_base_url?: string;
-    uptime_seconds?: number;
-  };
-  storage?: {
-    driver?: string;
-    sqlite_path?: string;
-    mode?: string;
-  };
-  runtime?: {
-    active_sessions?: number;
-    pending_requests?: number;
-    max_pending_global?: number;
-    queue_depth_total?: number;
-    p50_latency_ms?: number;
-    p95_latency_ms?: number;
-    error_rate?: number;
-  };
-  tls?: {
-    tls_listen_addr?: string;
-    active_certificates?: number;
-  };
-}
-
-interface Incident {
-  id: string;
-  severity: string;
-  source: string;
-  message: string;
-  created_at: string;
-}
-
 interface Plan {
   id: string;
   name: string;
@@ -131,87 +32,39 @@ interface Plan {
   max_rps: number;
   max_monthly_gb: number;
   tls_enabled: boolean;
+  price_monthly_usd?: number;
+  price_annual_usd?: number;
+  public_order?: number;
 }
 
-interface TLSCertificate {
-  id: string;
-  hostname: string;
-  active: boolean;
-  expires_at?: string;
+interface PublicDownloadsPayload {
+  source?: string;
+  available?: boolean;
+  repo?: string;
+  tag?: string;
+  release_url?: string;
+  release_notes_url?: string;
+  checksums_url?: string;
+  message?: string;
+  downloads?: Array<{
+    platform: string;
+    label: string;
+    file_name: string;
+    url: string;
+    size_bytes?: number;
+  }>;
 }
 
-interface TenantEnvironment {
-  scheme: string;
-  host: string;
-  default_port: number;
-  variables: Record<string, string>;
+interface PublicAnalyticsEvent {
+  event: string;
+  page_path?: string;
+  plan_id?: string;
+  billing?: string;
+  platform?: string;
+  file_name?: string;
+  outcome?: string;
+  source?: string;
 }
-
-interface ApiClient {
-  <T>(path: string, init?: RequestInit): Promise<T>;
-}
-
-const PAGE_META: Record<PageKey, { title: string; subtitle: string }> = {
-  dashboard: {
-    title: "Tenant Dashboard",
-    subtitle: "Plan gauges, statuses, and usage.",
-  },
-  routes: {
-    title: "Route Management",
-    subtitle: "Create and manage route forwarding rules.",
-  },
-  connectors: {
-    title: "Connector Management",
-    subtitle: "Pair hosts and monitor connector status.",
-  },
-  tenantConfig: {
-    title: "Tenant Configuration",
-    subtitle: "Manage environment defaults for local targets.",
-  },
-  adminOverview: {
-    title: "Super Admin Overview",
-    subtitle: "Global counts, usage and platform snapshot.",
-  },
-  adminUsers: {
-    title: "User Administration",
-    subtitle: "Create and update users across all tenants.",
-  },
-  adminTenants: {
-    title: "Tenant Administration",
-    subtitle: "Create tenants and assign subscription plans.",
-  },
-  adminPlans: {
-    title: "Plan Management",
-    subtitle: "Control quotas and traffic caps for all plans.",
-  },
-  adminTLS: {
-    title: "TLS Certificates",
-    subtitle: "Upload, activate, and remove TLS certificates.",
-  },
-  adminSystem: {
-    title: "System Status",
-    subtitle: "Health, incidents, queues, and runtime status.",
-  },
-};
-
-const SUPER_NAV: Array<{ key: PageKey; label: string }> = [
-  { key: "adminOverview", label: "Overview" },
-  { key: "adminUsers", label: "Users" },
-  { key: "adminTenants", label: "Tenants" },
-  { key: "adminPlans", label: "Plans" },
-  { key: "adminTLS", label: "TLS" },
-  { key: "adminSystem", label: "System" },
-  { key: "routes", label: "Routes" },
-  { key: "connectors", label: "Connectors" },
-  { key: "tenantConfig", label: "Tenant Config" },
-];
-
-const TENANT_NAV: Array<{ key: PageKey; label: string }> = [
-  { key: "dashboard", label: "Dashboard" },
-  { key: "routes", label: "Routes" },
-  { key: "connectors", label: "Connectors" },
-  { key: "tenantConfig", label: "Tenant Config" },
-];
 
 class ApiError extends Error {
   status: number;
@@ -273,25 +126,35 @@ async function requestJSON<T>(path: string, init?: RequestInit): Promise<T> {
   return payload as T;
 }
 
-function clampPercent(value: number): number {
-  if (!Number.isFinite(value)) {
-    return 0;
+function trackPublicEvent(event: PublicAnalyticsEvent): void {
+  if (typeof window === "undefined" || typeof event.event !== "string" || event.event.trim() === "") {
+    return;
   }
-  if (value < 0) {
-    return 0;
-  }
-  if (value > 1) {
-    return 1;
-  }
-  return value;
-}
 
-function formatPercent(value: number | undefined): string {
-  const numeric = Number(value ?? 0);
-  if (!Number.isFinite(numeric)) {
-    return "0%";
+  const payload: PublicAnalyticsEvent = {
+    source: "web",
+    page_path: window.location.pathname,
+    ...event,
+  };
+
+  const serialized = JSON.stringify(payload);
+  try {
+    if (typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
+      const blob = new Blob([serialized], { type: "application/json" });
+      if (navigator.sendBeacon("/api/public/events", blob)) {
+        return;
+      }
+    }
+  } catch {
+    // Fall back to fetch.
   }
-  return `${Math.round(numeric * 100)}%`;
+
+  void fetch("/api/public/events", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: serialized,
+    keepalive: true,
+  }).catch(() => undefined);
 }
 
 function formatNumber(value: number | undefined): string {
@@ -305,83 +168,20 @@ function formatNumber(value: number | undefined): string {
   return numeric.toFixed(2).replace(/\.00$/, "");
 }
 
-function formatDateTime(value: string | undefined): string {
-  if (!value) {
+function formatBinarySize(bytes: number | undefined): string {
+  const numeric = Number(bytes ?? 0);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
     return "-";
   }
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
+  if (numeric < 1024 * 1024) {
+    return `${Math.round(numeric / 1024)} KB`;
   }
-  return parsed.toLocaleString();
-}
-
-function statusClass(value: string): "ok" | "fail" | "warn" {
-  const normalized = value.toLowerCase();
-  if (["online", "active", "enabled", "ok"].includes(normalized)) {
-    return "ok";
-  }
-  if (["offline", "degraded", "disabled", "critical", "error"].includes(normalized)) {
-    return "fail";
-  }
-  return "warn";
-}
-
-function Badge({ value }: { value: string }) {
-  return <span className={`badge ${statusClass(value)}`}>{value}</span>;
-}
-
-function GaugeCard({
-  title,
-  gauge,
-  subtitle,
-}: {
-  title: string;
-  gauge: UsageGauge | undefined;
-  subtitle: string;
-}) {
-  const used = Number(gauge?.used ?? 0);
-  const limit = Number(gauge?.limit ?? 0);
-  const percent = Math.round(clampPercent(Number(gauge?.percent ?? 0)) * 100);
-  const ringStyle = {
-    background: `conic-gradient(var(--ring-fill) ${percent}%, var(--ring-bg) ${percent}% 100%)`,
-  };
-
-  return (
-    <article className="gauge-card">
-      <h3>{title}</h3>
-      <div className="gauge-ring" style={ringStyle}>
-        <span>
-          {formatNumber(used)} / {formatNumber(limit)}
-        </span>
-      </div>
-      <p>{subtitle}</p>
-    </article>
-  );
-}
-
-function Section({
-  title,
-  children,
-  actions,
-}: {
-  title: string;
-  children: React.ReactNode;
-  actions?: React.ReactNode;
-}) {
-  return (
-    <section className="panel">
-      <header className="panel-head">
-        <h3>{title}</h3>
-        {actions ? <div className="panel-actions">{actions}</div> : null}
-      </header>
-      {children}
-    </section>
-  );
+  return `${(numeric / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function LoginView({ onLoggedIn }: { onLoggedIn: () => Promise<void> }) {
-  const [username, setUsername] = useState("super-admin");
+  const navigate = useNavigate();
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -397,13 +197,14 @@ function LoginView({ onLoggedIn }: { onLoggedIn: () => Promise<void> }) {
           body: JSON.stringify({ username, password }),
         });
         await onLoggedIn();
+        navigate("/app");
       } catch (error: unknown) {
         setStatus(toErrorMessage(error));
       } finally {
         setSubmitting(false);
       }
     },
-    [onLoggedIn, password, username]
+    [navigate, onLoggedIn, password, username]
   );
 
   return (
@@ -432,1558 +233,493 @@ function LoginView({ onLoggedIn }: { onLoggedIn: () => Promise<void> }) {
           </button>
         </form>
         {status ? <p className="status error">{status}</p> : null}
+        <div className="auth-links">
+          <Link to="/signup">Create account</Link>
+          <Link to="/">Back to website</Link>
+        </div>
       </section>
     </main>
   );
 }
 
-function TenantDashboardPage({ api }: { api: ApiClient }) {
-  const [data, setData] = useState<DashboardPayload | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+function SignupView({ onSignedUp }: { onSignedUp: () => Promise<void> }) {
+  const navigate = useNavigate();
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [status, setStatus] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const payload = await api<DashboardPayload>("/api/me/dashboard");
-      setData(payload);
-    } catch (err: unknown) {
-      setError(toErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }, [api]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  if (loading) {
-    return <Section title="Dashboard">Loading...</Section>;
-  }
-  if (error) {
-    return (
-      <Section title="Dashboard" actions={<button onClick={() => void load()}>Retry</button>}>
-        <p className="status error">{error}</p>
-      </Section>
-    );
-  }
-
-  const routes = data?.routes ?? [];
-  const connectors = data?.connectors ?? [];
-
-  return (
-    <>
-      <div className="gauge-row">
-        <GaugeCard title="Routes" gauge={data?.gauges?.routes} subtitle="Used / plan limit" />
-        <GaugeCard title="Connectors" gauge={data?.gauges?.connectors} subtitle="Used / plan limit" />
-        <GaugeCard title="Traffic (GB)" gauge={data?.gauges?.traffic} subtitle="Monthly used / cap" />
-      </div>
-
-      <Section title="Live Status" actions={<button onClick={() => void load()}>Refresh</button>}>
-        <div className="kv">
-          <p>
-            <strong>Plan</strong>
-            <span>{data?.plan?.id ?? "free"}</span>
-          </p>
-          <p>
-            <strong>Blocked Requests</strong>
-            <span>{data?.status?.blocked_requests_month ?? 0}</span>
-          </p>
-          <p>
-            <strong>Routes Active</strong>
-            <span>{data?.status?.routes_active ?? 0}</span>
-          </p>
-          <p>
-            <strong>Connectors Online</strong>
-            <span>{data?.status?.connectors_online ?? 0}</span>
-          </p>
-        </div>
-      </Section>
-
-      <Section title="Routes">
-        <table>
-          <thead>
-            <tr>
-              <th>Tenant</th>
-              <th>Route</th>
-              <th>Status</th>
-              <th>Public URL</th>
-            </tr>
-          </thead>
-          <tbody>
-            {routes.length === 0 ? (
-              <tr>
-                <td colSpan={4}>No routes yet.</td>
-              </tr>
-            ) : (
-              routes.map((route) => (
-                <tr key={`${route.tenant_id}:${route.id}`}>
-                  <td>{route.tenant_id}</td>
-                  <td>{route.id}</td>
-                  <td>
-                    <Badge value={route.connected ? "active" : "degraded"} />
-                  </td>
-                  <td className="code">{route.public_url ?? "-"}</td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </Section>
-
-      <Section title="Connectors">
-        <table>
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Status</th>
-              <th>Agent</th>
-              <th>Last Seen</th>
-            </tr>
-          </thead>
-          <tbody>
-            {connectors.length === 0 ? (
-              <tr>
-                <td colSpan={4}>No connectors yet.</td>
-              </tr>
-            ) : (
-              connectors.map((connector) => (
-                <tr key={connector.id}>
-                  <td>{connector.id}</td>
-                  <td>
-                    <Badge value={connector.connected ? "online" : "offline"} />
-                  </td>
-                  <td>{connector.agent_id ?? "-"}</td>
-                  <td>{formatDateTime(connector.last_seen)}</td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </Section>
-    </>
-  );
-}
-
-function AdminOverviewPage({ api }: { api: ApiClient }) {
-  const [stats, setStats] = useState<AdminStatsPayload | null>(null);
-  const [status, setStatus] = useState<SystemStatusPayload | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const [statsPayload, statusPayload] = await Promise.all([
-        api<AdminStatsPayload>("/api/admin/stats"),
-        api<SystemStatusPayload>("/api/admin/system-status"),
-      ]);
-      setStats(statsPayload);
-      setStatus(statusPayload);
-    } catch (err: unknown) {
-      setError(toErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }, [api]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  if (loading) {
-    return <Section title="Overview">Loading...</Section>;
-  }
-  if (error) {
-    return (
-      <Section title="Overview" actions={<button onClick={() => void load()}>Retry</button>}>
-        <p className="status error">{error}</p>
-      </Section>
-    );
-  }
-
-  const routeCount = Number(stats?.route_count ?? 0);
-  const connectorCount = Number(stats?.connector_count ?? 0);
-  const tenantCount = Number(stats?.tenant_count ?? 0);
-
-  return (
-    <>
-      <div className="gauge-row">
-        <GaugeCard
-          title="Routes"
-          gauge={{ used: routeCount, limit: Math.max(routeCount, 1), percent: 1 }}
-          subtitle="Global route count"
-        />
-        <GaugeCard
-          title="Connectors"
-          gauge={{ used: connectorCount, limit: Math.max(connectorCount, 1), percent: 1 }}
-          subtitle="Global connector count"
-        />
-        <GaugeCard
-          title="Tenants"
-          gauge={{ used: tenantCount, limit: Math.max(tenantCount, 1), percent: 1 }}
-          subtitle="Global tenant count"
-        />
-      </div>
-
-      <Section title="Global Snapshot" actions={<button onClick={() => void load()}>Refresh</button>}>
-        <div className="kv">
-          <p>
-            <strong>Users</strong>
-            <span>{stats?.user_count ?? 0}</span>
-          </p>
-          <p>
-            <strong>Active Connectors</strong>
-            <span>{stats?.active_connectors ?? 0}</span>
-          </p>
-          <p>
-            <strong>Storage Driver</strong>
-            <span>{stats?.storage_driver ?? "memory"}</span>
-          </p>
-          <p>
-            <strong>Uptime (s)</strong>
-            <span>{stats?.uptime_seconds ?? 0}</span>
-          </p>
-        </div>
-      </Section>
-
-      <Section title="Runtime">
-        <div className="kv">
-          <p>
-            <strong>Pending Requests</strong>
-            <span>
-              {status?.runtime?.pending_requests ?? 0} / {status?.runtime?.max_pending_global ?? 0}
-            </span>
-          </p>
-          <p>
-            <strong>Queue Depth</strong>
-            <span>{status?.runtime?.queue_depth_total ?? 0}</span>
-          </p>
-          <p>
-            <strong>Latency p50 / p95</strong>
-            <span>
-              {status?.runtime?.p50_latency_ms ?? 0}ms / {status?.runtime?.p95_latency_ms ?? 0}ms
-            </span>
-          </p>
-          <p>
-            <strong>Error Rate</strong>
-            <span>{formatPercent(status?.runtime?.error_rate)}</span>
-          </p>
-        </div>
-      </Section>
-    </>
-  );
-}
-
-function AdminUsersPage({ api }: { api: ApiClient }) {
-  const [users, setUsers] = useState<User[]>([]);
-  const [tenants, setTenants] = useState<Tenant[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const [usersPayload, tenantsPayload] = await Promise.all([
-        api<{ users: User[] }>("/api/admin/users"),
-        api<{ tenants: Tenant[] }>("/api/tenants"),
-      ]);
-      setUsers(usersPayload.users ?? []);
-      setTenants(tenantsPayload.tenants ?? []);
-    } catch (err: unknown) {
-      setError(toErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }, [api]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const createUser = useCallback(
+  const submit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
-      setMessage("");
-      const form = event.currentTarget;
-      const formData = new FormData(form);
-      try {
-        await api<{ message: string }>("/api/admin/users", {
-          method: "POST",
-          body: JSON.stringify({
-            username: String(formData.get("username") ?? ""),
-            password: String(formData.get("password") ?? ""),
-            role: String(formData.get("role") ?? "member"),
-            tenant_id: String(formData.get("tenant_id") ?? ""),
-          }),
-        });
-        form.reset();
-        setMessage("User created.");
-        await load();
-      } catch (err: unknown) {
-        setMessage(toErrorMessage(err));
-      }
-    },
-    [api, load]
-  );
-
-  const toggleUserStatus = useCallback(
-    async (user: User) => {
-      setMessage("");
-      try {
-        await api<{ message: string }>(`/api/admin/users/${encodeURIComponent(user.username)}`, {
-          method: "PATCH",
-          body: JSON.stringify({
-            status: user.status === "disabled" ? "active" : "disabled",
-          }),
-        });
-        await load();
-      } catch (err: unknown) {
-        setMessage(toErrorMessage(err));
-      }
-    },
-    [api, load]
-  );
-
-  return (
-    <>
-      <Section title="Create User">
-        <form className="inline-form" onSubmit={createUser}>
-          <input name="username" placeholder="username" required />
-          <input name="password" type="password" placeholder="password" required />
-          <select name="role" defaultValue="member">
-            <option value="member">member</option>
-            <option value="tenant_admin">tenant_admin</option>
-            <option value="super_admin">super_admin</option>
-          </select>
-          <select name="tenant_id" defaultValue="">
-            <option value="">No tenant (super admin)</option>
-            {tenants.map((tenant) => (
-              <option key={tenant.id} value={tenant.id}>
-                {tenant.id}
-              </option>
-            ))}
-          </select>
-          <button type="submit">Create</button>
-        </form>
-        {message ? <p className="status">{message}</p> : null}
-      </Section>
-
-      <Section title="Users" actions={<button onClick={() => void load()}>Refresh</button>}>
-        {loading ? <p>Loading...</p> : null}
-        {error ? <p className="status error">{error}</p> : null}
-        {!loading && !error ? (
-          <table>
-            <thead>
-              <tr>
-                <th>Username</th>
-                <th>Role</th>
-                <th>Tenant</th>
-                <th>Status</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.length === 0 ? (
-                <tr>
-                  <td colSpan={5}>No users.</td>
-                </tr>
-              ) : (
-                users.map((user) => (
-                  <tr key={user.username}>
-                    <td>{user.username}</td>
-                    <td>{user.role}</td>
-                    <td>{user.tenant_id || "-"}</td>
-                    <td>
-                      <Badge value={user.status || "active"} />
-                    </td>
-                    <td>
-                      <button className="ghost" onClick={() => void toggleUserStatus(user)}>
-                        {user.status === "disabled" ? "Enable" : "Disable"}
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        ) : null}
-      </Section>
-    </>
-  );
-}
-
-function AdminTenantsPage({ api }: { api: ApiClient }) {
-  const [tenants, setTenants] = useState<Tenant[]>([]);
-  const [plans, setPlans] = useState<Plan[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const [tenantsPayload, plansPayload] = await Promise.all([
-        api<{ tenants: Tenant[] }>("/api/tenants"),
-        api<{ plans: Plan[] }>("/api/admin/plans"),
-      ]);
-      setTenants(tenantsPayload.tenants ?? []);
-      setPlans(plansPayload.plans ?? []);
-    } catch (err: unknown) {
-      setError(toErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }, [api]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const createTenant = useCallback(
-    async (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      setMessage("");
-      const form = event.currentTarget;
-      const formData = new FormData(form);
-      try {
-        await api<{ message: string }>("/api/tenants", {
-          method: "POST",
-          body: JSON.stringify({
-            id: String(formData.get("id") ?? ""),
-            name: String(formData.get("name") ?? ""),
-          }),
-        });
-        form.reset();
-        setMessage("Tenant created.");
-        await load();
-      } catch (err: unknown) {
-        setMessage(toErrorMessage(err));
-      }
-    },
-    [api, load]
-  );
-
-  const assignPlan = useCallback(
-    async (tenantID: string, planID: string) => {
-      setMessage("");
-      try {
-        await api<{ message: string }>(`/api/admin/tenants/${encodeURIComponent(tenantID)}/assign-plan`, {
-          method: "POST",
-          body: JSON.stringify({ plan_id: planID }),
-        });
-        setMessage(`Assigned plan ${planID} to ${tenantID}.`);
-      } catch (err: unknown) {
-        setMessage(toErrorMessage(err));
-      }
-    },
-    [api]
-  );
-
-  return (
-    <>
-      <Section title="Create Tenant">
-        <form className="inline-form" onSubmit={createTenant}>
-          <input name="id" placeholder="tenant-id" required />
-          <input name="name" placeholder="Tenant name" required />
-          <button type="submit">Create</button>
-        </form>
-        {message ? <p className="status">{message}</p> : null}
-      </Section>
-
-      <Section title="Tenants" actions={<button onClick={() => void load()}>Refresh</button>}>
-        {loading ? <p>Loading...</p> : null}
-        {error ? <p className="status error">{error}</p> : null}
-        {!loading && !error ? (
-          <table>
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Name</th>
-                <th>Routes</th>
-                <th>Assign Plan</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tenants.length === 0 ? (
-                <tr>
-                  <td colSpan={4}>No tenants.</td>
-                </tr>
-              ) : (
-                tenants.map((tenant) => (
-                  <tr key={tenant.id}>
-                    <td>{tenant.id}</td>
-                    <td>{tenant.name}</td>
-                    <td>{tenant.route_count ?? 0}</td>
-                    <td>
-                      <form
-                        className="inline-form"
-                        onSubmit={(event) => {
-                          event.preventDefault();
-                          const formData = new FormData(event.currentTarget);
-                          void assignPlan(tenant.id, String(formData.get("plan_id") ?? ""));
-                        }}
-                      >
-                        <select name="plan_id" defaultValue={plans[0]?.id ?? ""}>
-                          {plans.map((plan) => (
-                            <option key={plan.id} value={plan.id}>
-                              {plan.id}
-                            </option>
-                          ))}
-                        </select>
-                        <button type="submit">Assign</button>
-                      </form>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        ) : null}
-      </Section>
-    </>
-  );
-}
-
-function AdminPlansPage({ api }: { api: ApiClient }) {
-  const [plans, setPlans] = useState<Plan[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const payload = await api<{ plans: Plan[] }>("/api/admin/plans");
-      setPlans(payload.plans ?? []);
-    } catch (err: unknown) {
-      setError(toErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }, [api]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const createPlan = useCallback(
-    async (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      setMessage("");
-      const form = event.currentTarget;
-      const formData = new FormData(form);
-      try {
-        await api<{ message: string }>("/api/admin/plans", {
-          method: "POST",
-          body: JSON.stringify({
-            id: String(formData.get("id") ?? ""),
-            name: String(formData.get("name") ?? ""),
-            max_routes: Number(formData.get("max_routes") ?? 0),
-            max_connectors: Number(formData.get("max_connectors") ?? 0),
-            max_rps: Number(formData.get("max_rps") ?? 0),
-            max_monthly_gb: Number(formData.get("max_monthly_gb") ?? 0),
-            tls_enabled: formData.get("tls_enabled") === "on",
-          }),
-        });
-        form.reset();
-        setMessage("Plan saved.");
-        await load();
-      } catch (err: unknown) {
-        setMessage(toErrorMessage(err));
-      }
-    },
-    [api, load]
-  );
-
-  return (
-    <>
-      <Section title="Create Plan">
-        <form className="inline-form" onSubmit={createPlan}>
-          <input name="id" placeholder="id" required />
-          <input name="name" placeholder="name" required />
-          <input name="max_routes" type="number" min={1} placeholder="max routes" required />
-          <input
-            name="max_connectors"
-            type="number"
-            min={1}
-            placeholder="max connectors"
-            required
-          />
-          <input name="max_rps" type="number" min={1} placeholder="max rps" required />
-          <input
-            name="max_monthly_gb"
-            type="number"
-            min={1}
-            placeholder="max monthly gb"
-            required
-          />
-          <label className="checkbox">
-            <input type="checkbox" name="tls_enabled" />
-            TLS enabled
-          </label>
-          <button type="submit">Save</button>
-        </form>
-        {message ? <p className="status">{message}</p> : null}
-      </Section>
-
-      <Section title="Plans" actions={<button onClick={() => void load()}>Refresh</button>}>
-        {loading ? <p>Loading...</p> : null}
-        {error ? <p className="status error">{error}</p> : null}
-        {!loading && !error ? (
-          <table>
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Name</th>
-                <th>Routes</th>
-                <th>Connectors</th>
-                <th>RPS</th>
-                <th>Monthly GB</th>
-                <th>TLS</th>
-              </tr>
-            </thead>
-            <tbody>
-              {plans.length === 0 ? (
-                <tr>
-                  <td colSpan={7}>No plans.</td>
-                </tr>
-              ) : (
-                plans.map((plan) => (
-                  <tr key={plan.id}>
-                    <td>{plan.id}</td>
-                    <td>{plan.name}</td>
-                    <td>{plan.max_routes}</td>
-                    <td>{plan.max_connectors}</td>
-                    <td>{plan.max_rps}</td>
-                    <td>{plan.max_monthly_gb}</td>
-                    <td>
-                      <Badge value={plan.tls_enabled ? "enabled" : "disabled"} />
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        ) : null}
-      </Section>
-    </>
-  );
-}
-
-function AdminTLSPage({ api }: { api: ApiClient }) {
-  const [certificates, setCertificates] = useState<TLSCertificate[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const payload = await api<{ certificates: TLSCertificate[] }>("/api/admin/tls/certificates");
-      setCertificates(payload.certificates ?? []);
-    } catch (err: unknown) {
-      setError(toErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }, [api]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const upload = useCallback(
-    async (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      setMessage("");
-      const form = event.currentTarget;
-      const formData = new FormData(form);
-      try {
-        await api<{ message: string }>("/api/admin/tls/certificates", {
-          method: "POST",
-          body: JSON.stringify({
-            id: String(formData.get("id") ?? ""),
-            hostname: String(formData.get("hostname") ?? ""),
-            cert_pem: String(formData.get("cert_pem") ?? ""),
-            key_pem: String(formData.get("key_pem") ?? ""),
-            active: formData.get("active") === "on",
-          }),
-        });
-        form.reset();
-        setMessage("Certificate uploaded.");
-        await load();
-      } catch (err: unknown) {
-        setMessage(toErrorMessage(err));
-      }
-    },
-    [api, load]
-  );
-
-  const setActive = useCallback(
-    async (cert: TLSCertificate, active: boolean) => {
-      setMessage("");
-      try {
-        await api<{ message: string }>(`/api/admin/tls/certificates/${encodeURIComponent(cert.id)}`, {
-          method: "PATCH",
-          body: JSON.stringify({ active }),
-        });
-        await load();
-      } catch (err: unknown) {
-        setMessage(toErrorMessage(err));
-      }
-    },
-    [api, load]
-  );
-
-  const remove = useCallback(
-    async (cert: TLSCertificate) => {
-      setMessage("");
-      try {
-        await api<null>(`/api/admin/tls/certificates/${encodeURIComponent(cert.id)}`, {
-          method: "DELETE",
-        });
-        await load();
-      } catch (err: unknown) {
-        setMessage(toErrorMessage(err));
-      }
-    },
-    [api, load]
-  );
-
-  return (
-    <>
-      <Section title="Upload Certificate">
-        <form className="stack" onSubmit={upload}>
-          <div className="inline-form">
-            <input name="id" placeholder="id" required />
-            <input name="hostname" placeholder="example.com" required />
-            <label className="checkbox">
-              <input name="active" type="checkbox" />
-              Active
-            </label>
-          </div>
-          <label>
-            Certificate PEM
-            <textarea name="cert_pem" rows={6} required />
-          </label>
-          <label>
-            Private Key PEM
-            <textarea name="key_pem" rows={6} required />
-          </label>
-          <button type="submit">Upload</button>
-        </form>
-        {message ? <p className="status">{message}</p> : null}
-      </Section>
-
-      <Section title="Certificates" actions={<button onClick={() => void load()}>Refresh</button>}>
-        {loading ? <p>Loading...</p> : null}
-        {error ? <p className="status error">{error}</p> : null}
-        {!loading && !error ? (
-          <table>
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Hostname</th>
-                <th>Status</th>
-                <th>Expires</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {certificates.length === 0 ? (
-                <tr>
-                  <td colSpan={5}>No certificates.</td>
-                </tr>
-              ) : (
-                certificates.map((cert) => (
-                  <tr key={cert.id}>
-                    <td>{cert.id}</td>
-                    <td>{cert.hostname}</td>
-                    <td>
-                      <Badge value={cert.active ? "active" : "inactive"} />
-                    </td>
-                    <td>{cert.expires_at ? cert.expires_at.slice(0, 10) : "-"}</td>
-                    <td>
-                      <div className="actions">
-                        <button className="ghost" onClick={() => void setActive(cert, !cert.active)}>
-                          {cert.active ? "Deactivate" : "Activate"}
-                        </button>
-                        <button className="ghost danger" onClick={() => void remove(cert)}>
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        ) : null}
-      </Section>
-    </>
-  );
-}
-
-function AdminSystemPage({ api }: { api: ApiClient }) {
-  const [status, setStatus] = useState<SystemStatusPayload | null>(null);
-  const [incidents, setIncidents] = useState<Incident[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const [statusPayload, incidentPayload] = await Promise.all([
-        api<SystemStatusPayload>("/api/admin/system-status"),
-        api<{ incidents: Incident[] }>("/api/admin/incidents?limit=100"),
-      ]);
-      setStatus(statusPayload);
-      setIncidents(incidentPayload.incidents ?? []);
-    } catch (err: unknown) {
-      setError(toErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }, [api]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  return (
-    <>
-      <Section title="System Status" actions={<button onClick={() => void load()}>Refresh</button>}>
-        {loading ? <p>Loading...</p> : null}
-        {error ? <p className="status error">{error}</p> : null}
-        {!loading && !error ? (
-          <div className="kv">
-            <p>
-              <strong>Gateway</strong>
-              <span>{status?.gateway?.status ?? "unknown"}</span>
-            </p>
-            <p>
-              <strong>Storage</strong>
-              <span>{status?.storage?.driver ?? "memory"}</span>
-            </p>
-            <p>
-              <strong>Active Sessions</strong>
-              <span>{status?.runtime?.active_sessions ?? 0}</span>
-            </p>
-            <p>
-              <strong>Pending Requests</strong>
-              <span>{status?.runtime?.pending_requests ?? 0}</span>
-            </p>
-            <p>
-              <strong>Latency p50/p95</strong>
-              <span>
-                {status?.runtime?.p50_latency_ms ?? 0}ms / {status?.runtime?.p95_latency_ms ?? 0}ms
-              </span>
-            </p>
-            <p>
-              <strong>Error Rate</strong>
-              <span>{formatPercent(status?.runtime?.error_rate)}</span>
-            </p>
-          </div>
-        ) : null}
-      </Section>
-
-      <Section title="Incidents">
-        <table>
-          <thead>
-            <tr>
-              <th>Severity</th>
-              <th>Source</th>
-              <th>Message</th>
-              <th>Created</th>
-            </tr>
-          </thead>
-          <tbody>
-            {incidents.length === 0 ? (
-              <tr>
-                <td colSpan={4}>No incidents.</td>
-              </tr>
-            ) : (
-              incidents.map((incident) => (
-                <tr key={incident.id}>
-                  <td>
-                    <Badge value={incident.severity} />
-                  </td>
-                  <td>{incident.source}</td>
-                  <td>{incident.message}</td>
-                  <td>{formatDateTime(incident.created_at)}</td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </Section>
-    </>
-  );
-}
-
-function RoutesPage({ api, me }: { api: ApiClient; me: AuthMeResponse }) {
-  const isSuper = me.user.role === "super_admin";
-  const [routes, setRoutes] = useState<RouteView[]>([]);
-  const [connectors, setConnectors] = useState<ConnectorView[]>([]);
-  const [tenants, setTenants] = useState<Tenant[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const [routesPayload, connectorsPayload, tenantsPayload] = await Promise.all([
-        api<{ routes: RouteView[] }>("/api/me/routes"),
-        api<{ connectors: ConnectorView[] }>("/api/me/connectors"),
-        api<{ tenants: Tenant[] }>("/api/tenants"),
-      ]);
-      setRoutes(routesPayload.routes ?? []);
-      setConnectors(connectorsPayload.connectors ?? []);
-      setTenants(tenantsPayload.tenants ?? []);
-    } catch (err: unknown) {
-      setError(toErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }, [api]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const submitRoute = useCallback(
-    async (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      setMessage("");
-      const form = event.currentTarget;
-      const formData = new FormData(form);
-      const tenantID = isSuper
-        ? String(formData.get("tenant_id") ?? "")
-        : me.user.tenant_id || tenants[0]?.id || "default";
-      try {
-        await api<{ message: string }>(`/api/tenants/${encodeURIComponent(tenantID)}/routes`, {
-          method: "POST",
-          body: JSON.stringify({
-            id: String(formData.get("id") ?? ""),
-            target: String(formData.get("target") ?? ""),
-            token: String(formData.get("token") ?? ""),
-            max_rps: Number(formData.get("max_rps") ?? 0),
-            connector_id: String(formData.get("connector_id") ?? ""),
-            local_scheme: String(formData.get("local_scheme") ?? "http"),
-            local_host: String(formData.get("local_host") ?? "127.0.0.1"),
-            local_port: Number(formData.get("local_port") ?? 0),
-            local_base_path: String(formData.get("local_base_path") ?? ""),
-          }),
-        });
-        setMessage("Route saved.");
-        form.reset();
-        await load();
-      } catch (err: unknown) {
-        setMessage(toErrorMessage(err));
-      }
-    },
-    [api, isSuper, load, me.user.tenant_id, tenants]
-  );
-
-  const deleteRoute = useCallback(
-    async (route: RouteView) => {
-      setMessage("");
-      try {
-        await api<null>(
-          `/api/tenants/${encodeURIComponent(route.tenant_id)}/routes/${encodeURIComponent(route.id)}`,
-          {
-            method: "DELETE",
-          }
-        );
-        await load();
-      } catch (err: unknown) {
-        setMessage(toErrorMessage(err));
-      }
-    },
-    [api, load]
-  );
-
-  const defaultTenant = me.user.tenant_id || tenants[0]?.id || "default";
-
-  return (
-    <>
-      <Section title="Create Route">
-        <form className="grid cols-2" onSubmit={submitRoute}>
-          <label>
-            Tenant
-            <select
-              name="tenant_id"
-              defaultValue={defaultTenant}
-              disabled={!isSuper}
-              required={isSuper}
-            >
-              {tenants.map((tenant) => (
-                <option key={tenant.id} value={tenant.id}>
-                  {tenant.id}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Route ID
-            <input name="id" placeholder="api" required />
-          </label>
-          <label>
-            Direct Target URL
-            <input name="target" placeholder="http://127.0.0.1:3000" />
-          </label>
-          <label>
-            Connector
-            <select name="connector_id" defaultValue="">
-              <option value="">Direct target</option>
-              {connectors.map((connector) => (
-                <option key={connector.id} value={connector.id}>
-                  {connector.id}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Local Scheme
-            <select name="local_scheme" defaultValue="http">
-              <option value="http">http</option>
-              <option value="https">https</option>
-            </select>
-          </label>
-          <label>
-            Local Host
-            <input name="local_host" defaultValue="127.0.0.1" />
-          </label>
-          <label>
-            Local Port
-            <input name="local_port" type="number" min={1} max={65535} placeholder="3000" />
-          </label>
-          <label>
-            Local Base Path
-            <input name="local_base_path" placeholder="/" />
-          </label>
-          <label>
-            Access Token
-            <input name="token" placeholder="optional" />
-          </label>
-          <label>
-            Route Max RPS
-            <input name="max_rps" type="number" min={0} step="0.1" placeholder="0 = fair share" />
-          </label>
-          <div>
-            <button type="submit">Save Route</button>
-          </div>
-        </form>
-        {message ? <p className="status">{message}</p> : null}
-      </Section>
-
-      <Section title="Routes" actions={<button onClick={() => void load()}>Refresh</button>}>
-        {loading ? <p>Loading...</p> : null}
-        {error ? <p className="status error">{error}</p> : null}
-        {!loading && !error ? (
-          <table>
-            <thead>
-              <tr>
-                <th>Tenant</th>
-                <th>ID</th>
-                <th>Connector</th>
-                <th>Max RPS</th>
-                <th>Status</th>
-                <th>Public URL</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {routes.length === 0 ? (
-                <tr>
-                  <td colSpan={7}>No routes.</td>
-                </tr>
-              ) : (
-                routes.map((route) => (
-                  <tr key={`${route.tenant_id}:${route.id}`}>
-                    <td>{route.tenant_id}</td>
-                    <td>{route.id}</td>
-                    <td>{route.connector_id || "-"}</td>
-                    <td>{route.max_rps && route.max_rps > 0 ? route.max_rps : "-"}</td>
-                    <td>
-                      <Badge value={route.connected ? "active" : "offline"} />
-                    </td>
-                    <td className="code">{route.public_url ?? "-"}</td>
-                    <td>
-                      <button className="ghost danger" onClick={() => void deleteRoute(route)}>
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        ) : null}
-      </Section>
-    </>
-  );
-}
-
-function ConnectorsPage({ api, me }: { api: ApiClient; me: AuthMeResponse }) {
-  const isSuper = me.user.role === "super_admin";
-  const [connectors, setConnectors] = useState<ConnectorView[]>([]);
-  const [tenants, setTenants] = useState<Tenant[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
-  const [output, setOutput] = useState("");
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const [connectorsPayload, tenantsPayload] = await Promise.all([
-        api<{ connectors: ConnectorView[] }>("/api/me/connectors"),
-        api<{ tenants: Tenant[] }>("/api/tenants"),
-      ]);
-      setConnectors(connectorsPayload.connectors ?? []);
-      setTenants(tenantsPayload.tenants ?? []);
-    } catch (err: unknown) {
-      setError(toErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }, [api]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const createConnector = useCallback(
-    async (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      setMessage("");
-      const form = event.currentTarget;
-      const formData = new FormData(form);
-      const tenantID = isSuper
-        ? String(formData.get("tenant_id") ?? "")
-        : me.user.tenant_id || tenants[0]?.id || "default";
-      try {
-        await api<{ message: string }>("/api/connectors", {
-          method: "POST",
-          body: JSON.stringify({
-            tenant_id: tenantID,
-            id: String(formData.get("id") ?? ""),
-            name: String(formData.get("name") ?? ""),
-          }),
-        });
-        form.reset();
-        setMessage("Connector created.");
-        await load();
-      } catch (err: unknown) {
-        setMessage(toErrorMessage(err));
-      }
-    },
-    [api, isSuper, load, me.user.tenant_id, tenants]
-  );
-
-  const pair = useCallback(
-    async (id: string) => {
-      setMessage("");
-      try {
-        const payload = await api<{ command?: string }>(`/api/connectors/${encodeURIComponent(id)}/pair`, {
-          method: "POST",
-        });
-        setOutput(payload.command ?? "");
-      } catch (err: unknown) {
-        setMessage(toErrorMessage(err));
-      }
-    },
-    [api]
-  );
-
-  const rotate = useCallback(
-    async (id: string) => {
-      setMessage("");
-      try {
-        const payload = await api<{ connector_secret?: string }>(
-          `/api/connectors/${encodeURIComponent(id)}/rotate`,
-          {
-            method: "POST",
-          }
-        );
-        setOutput(`connector_secret=${payload.connector_secret ?? ""}`);
-      } catch (err: unknown) {
-        setMessage(toErrorMessage(err));
-      }
-    },
-    [api]
-  );
-
-  const remove = useCallback(
-    async (id: string) => {
-      setMessage("");
-      try {
-        await api<null>(`/api/connectors/${encodeURIComponent(id)}`, { method: "DELETE" });
-        await load();
-      } catch (err: unknown) {
-        setMessage(toErrorMessage(err));
-      }
-    },
-    [api, load]
-  );
-
-  return (
-    <>
-      <Section title="Create Connector">
-        <form className="inline-form" onSubmit={createConnector}>
-          {isSuper ? (
-            <select name="tenant_id" defaultValue={me.user.tenant_id || tenants[0]?.id || "default"}>
-              {tenants.map((tenant) => (
-                <option key={tenant.id} value={tenant.id}>
-                  {tenant.id}
-                </option>
-              ))}
-            </select>
-          ) : null}
-          <input name="id" placeholder="connector-id" required />
-          <input name="name" placeholder="Friendly name" required />
-          <button type="submit">Create</button>
-        </form>
-        {message ? <p className="status">{message}</p> : null}
-        {output ? <p className="code output">{output}</p> : null}
-      </Section>
-
-      <Section title="Connectors" actions={<button onClick={() => void load()}>Refresh</button>}>
-        {loading ? <p>Loading...</p> : null}
-        {error ? <p className="status error">{error}</p> : null}
-        {!loading && !error ? (
-          <table>
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Tenant</th>
-                <th>Status</th>
-                <th>Agent</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {connectors.length === 0 ? (
-                <tr>
-                  <td colSpan={5}>No connectors.</td>
-                </tr>
-              ) : (
-                connectors.map((connector) => (
-                  <tr key={connector.id}>
-                    <td>{connector.id}</td>
-                    <td>{connector.tenant_id}</td>
-                    <td>
-                      <Badge value={connector.connected ? "online" : "offline"} />
-                    </td>
-                    <td>{connector.agent_id || "-"}</td>
-                    <td>
-                      <div className="actions">
-                        <button className="ghost" onClick={() => void pair(connector.id)}>
-                          Pair
-                        </button>
-                        <button className="ghost" onClick={() => void rotate(connector.id)}>
-                          Rotate
-                        </button>
-                        <button className="ghost danger" onClick={() => void remove(connector.id)}>
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        ) : null}
-      </Section>
-    </>
-  );
-}
-
-function TenantConfigPage({ api, me }: { api: ApiClient; me: AuthMeResponse }) {
-  const isSuper = me.user.role === "super_admin";
-  const [tenants, setTenants] = useState<Tenant[]>([]);
-  const [selectedTenant, setSelectedTenant] = useState("");
-  const [environment, setEnvironment] = useState<TenantEnvironment>({
-    scheme: "http",
-    host: "127.0.0.1",
-    default_port: 3000,
-    variables: {},
-  });
-  const [variablesText, setVariablesText] = useState("{}");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
-
-  const loadTenants = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const payload = await api<{ tenants: Tenant[] }>("/api/tenants");
-      const items = payload.tenants ?? [];
-      setTenants(items);
-      if (items.length === 0) {
-        setSelectedTenant("");
-      } else if (isSuper) {
-        setSelectedTenant((current) => current || items[0].id);
-      } else {
-        setSelectedTenant(me.user.tenant_id || items[0].id);
-      }
-    } catch (err: unknown) {
-      setError(toErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }, [api, isSuper, me.user.tenant_id]);
-
-  useEffect(() => {
-    void loadTenants();
-  }, [loadTenants]);
-
-  const loadEnvironment = useCallback(async () => {
-    if (!selectedTenant) {
-      return;
-    }
-    setError("");
-    setMessage("");
-    try {
-      const payload = await api<{ environment: TenantEnvironment }>(
-        `/api/tenants/${encodeURIComponent(selectedTenant)}/environment`
-      );
-      const env = payload.environment;
-      setEnvironment(env);
-      setVariablesText(JSON.stringify(env.variables ?? {}, null, 2));
-    } catch (err: unknown) {
-      const messageText = toErrorMessage(err);
-      setError(messageText);
-    }
-  }, [api, selectedTenant]);
-
-  useEffect(() => {
-    void loadEnvironment();
-  }, [loadEnvironment]);
-
-  const saveEnvironment = useCallback(
-    async (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      if (!selectedTenant) {
+      setStatus("");
+      if (password !== confirmPassword) {
+        setStatus("Passwords do not match.");
         return;
       }
-      setMessage("");
-      setError("");
-      let variables: Record<string, string>;
+      setSubmitting(true);
+      trackPublicEvent({ event: "signup_submit", outcome: "attempt" });
       try {
-        const parsed = JSON.parse(variablesText) as unknown;
-        if (!isRecord(parsed)) {
-          throw new Error("Variables must be a JSON object.");
-        }
-        variables = {};
-        for (const [key, value] of Object.entries(parsed)) {
-          variables[String(key)] = String(value);
-        }
-      } catch (err: unknown) {
-        setError(toErrorMessage(err));
-        return;
-      }
-
-      try {
-        await api<{ message: string }>(`/api/tenants/${encodeURIComponent(selectedTenant)}/environment`, {
-          method: "PUT",
-          body: JSON.stringify({
-            scheme: environment.scheme,
-            host: environment.host,
-            default_port: environment.default_port,
-            variables,
-          }),
+        await requestJSON<{ message: string }>("/api/public/signup", {
+          method: "POST",
+          body: JSON.stringify({ username, password }),
         });
-        setMessage("Environment saved.");
-      } catch (err: unknown) {
-        setError(toErrorMessage(err));
+        trackPublicEvent({ event: "signup_success", outcome: "success" });
+        await onSignedUp();
+        navigate("/app");
+      } catch (error: unknown) {
+        setStatus(toErrorMessage(error));
+        trackPublicEvent({ event: "signup_failure", outcome: "error" });
+      } finally {
+        setSubmitting(false);
       }
     },
-    [api, environment, selectedTenant, variablesText]
+    [confirmPassword, navigate, onSignedUp, password, username]
   );
 
   return (
-    <Section
-      title="Tenant Environment"
-      actions={<button onClick={() => void loadEnvironment()}>Refresh</button>}
-    >
-      {loading ? <p>Loading...</p> : null}
-      {error ? <p className="status error">{error}</p> : null}
-      {!loading && selectedTenant ? (
-        <form className="grid cols-2" onSubmit={saveEnvironment}>
-          {isSuper ? (
-            <label>
-              Tenant
-              <select
-                value={selectedTenant}
-                onChange={(event) => setSelectedTenant(event.target.value)}
+    <main className="auth-shell">
+      <div className="orb orb-a" />
+      <div className="orb orb-b" />
+      <section className="auth-card">
+        <h1>Create Workspace</h1>
+        <p>Get instant access with a tenant admin account on the free plan.</p>
+        <form className="stack" onSubmit={submit}>
+          <label>
+            Username
+            <input value={username} onChange={(event) => setUsername(event.target.value)} required />
+          </label>
+          <label>
+            Password
+            <input
+              type="password"
+              value={password}
+              minLength={6}
+              onChange={(event) => setPassword(event.target.value)}
+              required
+            />
+          </label>
+          <label>
+            Confirm Password
+            <input
+              type="password"
+              value={confirmPassword}
+              minLength={6}
+              onChange={(event) => setConfirmPassword(event.target.value)}
+              required
+            />
+          </label>
+          <button type="submit" disabled={submitting}>
+            {submitting ? "Creating account..." : "Sign up"}
+          </button>
+        </form>
+        {status ? <p className="status error">{status}</p> : null}
+        <div className="auth-links">
+          <Link to="/login">Already have an account?</Link>
+          <Link to="/">Back to website</Link>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function LandingPage({ me }: { me: AuthMeResponse | null }) {
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [downloads, setDownloads] = useState<PublicDownloadsPayload | null>(null);
+  const [loadingPlans, setLoadingPlans] = useState(true);
+  const [loadingDownloads, setLoadingDownloads] = useState(true);
+  const [planError, setPlanError] = useState("");
+  const [downloadError, setDownloadError] = useState("");
+  const [billing, setBilling] = useState<"monthly" | "annual">("monthly");
+
+  useEffect(() => {
+    trackPublicEvent({ event: "landing_view" });
+    let mounted = true;
+    const loadPlans = async () => {
+      setLoadingPlans(true);
+      setPlanError("");
+      try {
+        const payload = await requestJSON<{ plans: Plan[] }>("/api/public/plans");
+        if (mounted) {
+          setPlans(payload.plans ?? []);
+        }
+      } catch (error: unknown) {
+        if (mounted) {
+          setPlanError(toErrorMessage(error));
+        }
+      } finally {
+        if (mounted) {
+          setLoadingPlans(false);
+        }
+      }
+    };
+    const loadDownloads = async () => {
+      setLoadingDownloads(true);
+      setDownloadError("");
+      try {
+        const payload = await requestJSON<PublicDownloadsPayload>("/api/public/downloads");
+        if (mounted) {
+          setDownloads(payload);
+        }
+      } catch (error: unknown) {
+        if (mounted) {
+          setDownloadError(toErrorMessage(error));
+        }
+      } finally {
+        if (mounted) {
+          setLoadingDownloads(false);
+        }
+      }
+    };
+    void Promise.all([loadPlans(), loadDownloads()]);
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const orderedPlans = [...plans].sort((a, b) => Number(a.public_order ?? 0) - Number(b.public_order ?? 0));
+  const handleBillingChange = useCallback(
+    (next: "monthly" | "annual") => {
+      if (next === billing) {
+        return;
+      }
+      setBilling(next);
+      trackPublicEvent({ event: "pricing_toggle", billing: next });
+    },
+    [billing]
+  );
+
+  const featureCards = [
+    {
+      title: "Connector-Based Routing",
+      text: "Pair host agents once, then bind routes to connectors with explicit local target metadata.",
+    },
+    {
+      title: "Tenant Isolation",
+      text: "Route, connector, and access boundaries are tenant-scoped with role-aware controls.",
+    },
+    {
+      title: "Traffic Governance",
+      text: "Hard limits for RPS and monthly transfer keep usage deterministic under every plan.",
+    },
+    {
+      title: "TLS + Cert Control",
+      text: "Super admins manage certificates and active status from one control plane.",
+    },
+    {
+      title: "Request Fidelity",
+      text: "Methods, query, headers, cookies, and body are preserved end-to-end.",
+    },
+    {
+      title: "Local-First Deploy",
+      text: "Run everything with Docker Compose and no external dependencies for day one.",
+    },
+  ];
+
+  return (
+    <>
+      <a className="skip-link" href="#main-marketing">
+        Skip to main content
+      </a>
+      <main id="main-marketing" className="marketing-site">
+        <section className="marketing-hero-shell" aria-labelledby="hero-title">
+        <header className="marketing-nav">
+          <div className="hero-brand-wrap">
+            <div className="hero-mark">P</div>
+            <div>
+              <strong>Proxer</strong>
+              <p>Public tunnels with governance</p>
+            </div>
+          </div>
+          <nav className="marketing-links" aria-label="Marketing navigation">
+            <a href="#features">Features</a>
+            <a href="#pricing">Plans</a>
+            <a href="#downloads">Downloads</a>
+            <a href="#faq">FAQ</a>
+          </nav>
+          <div className="hero-actions">
+            {me ? <Link to="/app">Open Workspace</Link> : <Link to="/login">Login</Link>}
+            {me ? null : (
+              <Link
+                className="cta"
+                to="/signup"
+                onClick={() => trackPublicEvent({ event: "signup_cta_click", outcome: "header" })}
               >
-                {tenants.map((tenant) => (
-                  <option key={tenant.id} value={tenant.id}>
-                    {tenant.id}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-          <label>
-            Scheme
-            <input
-              value={environment.scheme}
-              onChange={(event) =>
-                setEnvironment((current) => ({ ...current, scheme: event.target.value }))
-              }
-            />
-          </label>
-          <label>
-            Host
-            <input
-              value={environment.host}
-              onChange={(event) =>
-                setEnvironment((current) => ({ ...current, host: event.target.value }))
-              }
-            />
-          </label>
-          <label>
-            Default Port
-            <input
-              type="number"
-              value={environment.default_port}
-              onChange={(event) =>
-                setEnvironment((current) => ({
-                  ...current,
-                  default_port: Number(event.target.value || 0),
-                }))
-              }
-            />
-          </label>
-          <label className="wide">
-            Variables (JSON)
-            <textarea
-              rows={8}
-              value={variablesText}
-              onChange={(event) => setVariablesText(event.target.value)}
-            />
-          </label>
-          <div>
-            <button type="submit">Save</button>
+                Start Free
+              </Link>
+            )}
           </div>
-        </form>
-      ) : null}
-      {message ? <p className="status">{message}</p> : null}
-    </Section>
-  );
-}
-
-function Workspace({
-  me,
-  api,
-  onLogout,
-}: {
-  me: AuthMeResponse;
-  api: ApiClient;
-  onLogout: () => Promise<void>;
-}) {
-  const isSuper = me.user.role === "super_admin";
-  const navItems = isSuper ? SUPER_NAV : TENANT_NAV;
-  const [page, setPage] = useState<PageKey>(isSuper ? "adminOverview" : "dashboard");
-
-  useEffect(() => {
-    const allowed = new Set(navItems.map((item) => item.key));
-    if (!allowed.has(page)) {
-      setPage(navItems[0].key);
-    }
-  }, [navItems, page]);
-
-  const content = useMemo(() => {
-    if (page === "dashboard") {
-      return <TenantDashboardPage api={api} />;
-    }
-    if (page === "routes") {
-      return <RoutesPage api={api} me={me} />;
-    }
-    if (page === "connectors") {
-      return <ConnectorsPage api={api} me={me} />;
-    }
-    if (page === "tenantConfig") {
-      return <TenantConfigPage api={api} me={me} />;
-    }
-    if (page === "adminOverview") {
-      return <AdminOverviewPage api={api} />;
-    }
-    if (page === "adminUsers") {
-      return <AdminUsersPage api={api} />;
-    }
-    if (page === "adminTenants") {
-      return <AdminTenantsPage api={api} />;
-    }
-    if (page === "adminPlans") {
-      return <AdminPlansPage api={api} />;
-    }
-    if (page === "adminTLS") {
-      return <AdminTLSPage api={api} />;
-    }
-    if (page === "adminSystem") {
-      return <AdminSystemPage api={api} />;
-    }
-    return <Section title="Not Found">Page not found.</Section>;
-  }, [api, me, page]);
-
-  const meta = PAGE_META[page];
-
-  return (
-    <main className="workspace-shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <h1>Proxer</h1>
-          <p>
-            {me.user.username} · {me.user.role}
-          </p>
-        </div>
-        <nav className="nav">
-          {navItems.map((item) => (
-            <button
-              key={item.key}
-              className={item.key === page ? "active" : ""}
-              onClick={() => setPage(item.key)}
-            >
-              {item.label}
-            </button>
-          ))}
-        </nav>
-        <button className="ghost danger" onClick={() => void onLogout()}>
-          Logout
-        </button>
-      </aside>
-
-      <section className="workspace-content">
-        <header className="topbar">
-          <h2>{meta.title}</h2>
-          <p>{meta.subtitle}</p>
         </header>
-        <div className="page-content">{content}</div>
+
+        <div className="hero-grid">
+          <article className="hero-copy">
+            <p className="eyebrow">HTTP/HTTPS localhost exposure for serious teams</p>
+            <h1 id="hero-title">Ship local apps to the internet with control-plane discipline.</h1>
+            <p>
+              Proxer combines ngrok-style reachability with role-based tenancy, hard plan enforcement, and operational
+              visibility. Same development speed, better governance.
+            </p>
+            <div className="hero-cta">
+              <Link
+                className="cta"
+                to={me ? "/app" : "/signup"}
+                onClick={() => {
+                  if (!me) {
+                    trackPublicEvent({ event: "signup_cta_click", outcome: "hero" });
+                  }
+                }}
+              >
+                {me ? "Open Workspace" : "Create Workspace"}
+              </Link>
+              <Link className="cta-outline" to="/login">
+                Sign in
+              </Link>
+            </div>
+            <div className="hero-proof-row">
+              <span>Protocol scope: HTTP/HTTPS</span>
+              <span>Multi-tenant isolation</span>
+              <span>Docker Compose ready</span>
+            </div>
+            <div className="hero-proof-row">
+              <span>Request/response fidelity preserved</span>
+              <span>Deterministic 4xx/5xx failure mapping</span>
+              <span>Super-admin observability</span>
+            </div>
+          </article>
+
+          <aside className="hero-terminal">
+            <div className="hero-terminal-head">
+              <span />
+              <span />
+              <span />
+              <p>live-route-preview</p>
+            </div>
+            <div className="hero-terminal-body code">
+              <p>$ proxer-agent pair --token &lt;pair_token&gt;</p>
+              <p>connector status: online</p>
+              <p>route: /t/acme/api -&gt; 127.0.0.1:3000</p>
+              <p>tenant cap: 100 rps, 500 GB/month</p>
+              <p>response: 200 OK (47 ms)</p>
+            </div>
+          </aside>
+        </div>
       </section>
-    </main>
+
+      <section id="features" className="marketing-panel" aria-labelledby="features-title">
+        <header className="section-head">
+          <p className="eyebrow">Why teams switch</p>
+          <h2 id="features-title">Built for production-minded local development</h2>
+        </header>
+        <div className="feature-grid">
+          {featureCards.map((feature) => (
+            <article key={feature.title} className="feature-card">
+              <h3>{feature.title}</h3>
+              <p>{feature.text}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="marketing-panel" aria-labelledby="workflow-title">
+        <header className="section-head">
+          <p className="eyebrow">How it works</p>
+          <h2 id="workflow-title">Three-step setup</h2>
+        </header>
+        <div className="steps-grid">
+          <article>
+            <span>1</span>
+            <h3>Create connector</h3>
+            <p>Generate a short-lived pairing command from the workspace.</p>
+          </article>
+          <article>
+            <span>2</span>
+            <h3>Pair host agent</h3>
+            <p>Run the desktop agent on your machine and establish a secure connector session.</p>
+          </article>
+          <article>
+            <span>3</span>
+            <h3>Create route</h3>
+            <p>Bind public path to local target and start serving traffic instantly.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="pricing" className="marketing-panel" aria-labelledby="pricing-title">
+        <header className="section-head split">
+          <div>
+            <p className="eyebrow">Pricing</p>
+            <h2 id="pricing-title">Choose the right operational envelope</h2>
+          </div>
+          <div className="billing-toggle" role="group" aria-label="Billing cycle">
+            <button
+              className={billing === "monthly" ? "active" : ""}
+              type="button"
+              onClick={() => handleBillingChange("monthly")}
+            >
+              Monthly
+            </button>
+            <button
+              className={billing === "annual" ? "active" : ""}
+              type="button"
+              onClick={() => handleBillingChange("annual")}
+            >
+              Annual
+            </button>
+          </div>
+        </header>
+        {loadingPlans ? <p role="status" aria-live="polite">Loading plans...</p> : null}
+        {planError ? <p className="status error">{planError}</p> : null}
+        {!loadingPlans && !planError ? (
+          <div className="plan-grid">
+            {orderedPlans.map((plan) => {
+              const planID = String(plan.id || "").toLowerCase();
+              const highlighted = planID === "pro";
+              const rawPrice = billing === "annual" ? plan.price_annual_usd : plan.price_monthly_usd;
+              const cadence = billing === "annual" ? "year" : "month";
+              return (
+                <article key={plan.id} className={`plan-card${highlighted ? " highlighted" : ""}`}>
+                  {highlighted ? <span className="plan-badge">Most Popular</span> : null}
+                  <h3>{plan.name}</h3>
+                  <p className="plan-price">
+                    ${formatNumber(rawPrice)} <small>/ {cadence}</small>
+                  </p>
+                  <p className="plan-subprice">{plan.description || "Managed routing plan"}</p>
+                  <ul>
+                    <li>{formatNumber(plan.max_routes)} routes</li>
+                    <li>{formatNumber(plan.max_connectors)} connectors</li>
+                    <li>{formatNumber(plan.max_rps)} requests / sec</li>
+                    <li>{formatNumber(plan.max_monthly_gb)} GB transfer / month</li>
+                    <li>{plan.tls_enabled ? "TLS certificates included" : "No TLS certificate management"}</li>
+                  </ul>
+                  <Link
+                    className={highlighted ? "cta" : "cta-outline"}
+                    to={me ? "/app" : "/signup"}
+                    onClick={() => {
+                      if (!me) {
+                        trackPublicEvent({ event: "plan_cta_click", plan_id: plan.id, billing });
+                      }
+                    }}
+                  >
+                    {me ? "Use Plan" : "Start Free"}
+                  </Link>
+                </article>
+              );
+            })}
+          </div>
+        ) : null}
+      </section>
+
+      <section id="downloads" className="marketing-panel" aria-labelledby="downloads-title">
+        <header className="section-head">
+          <p className="eyebrow">Desktop agent</p>
+          <h2 id="downloads-title">Download binaries for your host machine</h2>
+        </header>
+        {loadingDownloads ? <p role="status" aria-live="polite">Loading downloads...</p> : null}
+        {downloadError ? <p className="status error">{downloadError}</p> : null}
+        {!loadingDownloads && !downloadError ? (
+          <>
+            {downloads?.available ? (
+              <div className="download-grid">
+                {(downloads.downloads ?? []).map((binary) => (
+                  <article key={`${binary.platform}:${binary.file_name}`} className="download-card">
+                    <h3>{binary.label}</h3>
+                    <p className="code">{binary.file_name}</p>
+                    <p>{formatBinarySize(binary.size_bytes)}</p>
+                    <a
+                      className="cta-outline"
+                      href={binary.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={() =>
+                        trackPublicEvent({
+                          event: "download_click",
+                          platform: binary.platform,
+                          file_name: binary.file_name,
+                        })
+                      }
+                    >
+                      Download
+                    </a>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p>{downloads?.message || "Downloads are not available yet."}</p>
+            )}
+            <div className="download-meta">
+              {downloads?.release_url ? (
+                <a href={downloads.release_url} target="_blank" rel="noreferrer">
+                  Release page
+                </a>
+              ) : null}
+              {downloads?.checksums_url ? (
+                <a href={downloads.checksums_url} target="_blank" rel="noreferrer">
+                  Checksums
+                </a>
+              ) : null}
+              {downloads?.release_notes_url ? (
+                <a href={downloads.release_notes_url} target="_blank" rel="noreferrer">
+                  Release notes
+                </a>
+              ) : null}
+            </div>
+          </>
+        ) : null}
+      </section>
+
+      <section id="faq" className="marketing-panel" aria-labelledby="faq-title">
+        <header className="section-head">
+          <p className="eyebrow">FAQ</p>
+          <h2 id="faq-title">Answers before you deploy</h2>
+        </header>
+        <div className="faq-grid">
+          <article>
+            <h3>Does Proxer return responses from localhost back to callers?</h3>
+            <p>Yes. Gateway dispatches to connector agent, agent calls localhost app, and response is returned.</p>
+          </article>
+          <article>
+            <h3>Can I run it entirely local?</h3>
+            <p>Yes. The full stack runs with Docker Compose and supports native desktop agents.</p>
+          </article>
+          <article>
+            <h3>How are limits enforced?</h3>
+            <p>Plan caps and runtime limits are hard enforced with deterministic error responses.</p>
+          </article>
+          <article>
+            <h3>Can super admins control plans and certificates?</h3>
+            <p>Yes. Super admin pages include users, tenants, plans, TLS certificates, and system status.</p>
+          </article>
+        </div>
+      </section>
+
+      <section className="marketing-final-cta" aria-labelledby="final-cta-title">
+        <h2 id="final-cta-title">Ready to expose localhost with operational guardrails?</h2>
+        <p>Spin up a workspace in minutes and route your first endpoint to the public internet.</p>
+        <div className="hero-cta">
+          <Link
+            className="cta"
+            to={me ? "/app" : "/signup"}
+            onClick={() => {
+              if (!me) {
+                trackPublicEvent({ event: "signup_cta_click", outcome: "footer" });
+              }
+            }}
+          >
+            {me ? "Open Workspace" : "Create Workspace"}
+          </Link>
+          <Link className="cta-outline" to="/login">
+            Login
+          </Link>
+        </div>
+      </section>
+      </main>
+    </>
   );
 }
 
 export function App() {
+  const location = useLocation();
   const [me, setMe] = useState<AuthMeResponse | null>(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
 
@@ -2000,8 +736,13 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    const requiresSessionProbe = location.pathname.startsWith("/app");
+    if (!requiresSessionProbe) {
+      setCheckingAuth(false);
+      return;
+    }
     void refreshSession();
-  }, [refreshSession]);
+  }, [location.pathname, refreshSession]);
 
   const api = useCallback(
     async <T,>(path: string, init?: RequestInit): Promise<T> => {
@@ -2026,13 +767,48 @@ export function App() {
     setMe(null);
   }, []);
 
-  if (checkingAuth) {
-    return <main className="auth-shell">Checking session...</main>;
-  }
-
-  if (!me) {
-    return <LoginView onLoggedIn={refreshSession} />;
-  }
-
-  return <Workspace me={me} api={api} onLogout={logout} />;
+  return (
+    <Routes>
+      <Route path="/" element={<LandingPage me={me} />} />
+      <Route
+        path="/login"
+        element={
+          checkingAuth ? (
+            <main className="auth-shell">Checking session...</main>
+          ) : me ? (
+            <Navigate to="/app" replace />
+          ) : (
+            <LoginView onLoggedIn={refreshSession} />
+          )
+        }
+      />
+      <Route
+        path="/signup"
+        element={
+          checkingAuth ? (
+            <main className="auth-shell">Checking session...</main>
+          ) : me ? (
+            <Navigate to="/app" replace />
+          ) : (
+            <SignupView onSignedUp={refreshSession} />
+          )
+        }
+      />
+      <Route
+        path="/app/*"
+        element={
+          checkingAuth ? (
+            <main className="auth-shell">Checking session...</main>
+          ) : me ? (
+            <Suspense fallback={<main className="auth-shell">Loading workspace...</main>}>
+              <WorkspaceApp me={me} api={api} onLogout={logout} />
+            </Suspense>
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
 }

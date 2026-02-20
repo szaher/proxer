@@ -440,6 +440,14 @@ func (s *PlanStore) Restore(snapshot planStoreSnapshot) {
 			continue
 		}
 		plan.ID = planID
+		if defaults, ok := defaultPlanPricingByID[planID]; ok &&
+			plan.PriceMonthlyUSD == 0 &&
+			plan.PriceAnnualUSD == 0 &&
+			plan.PublicOrder == 0 {
+			plan.PriceMonthlyUSD = defaults.PriceMonthlyUSD
+			plan.PriceAnnualUSD = defaults.PriceAnnualUSD
+			plan.PublicOrder = defaults.PublicOrder
+		}
 		now := time.Now().UTC()
 		if plan.CreatedAt.IsZero() {
 			plan.CreatedAt = now

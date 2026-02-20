@@ -7,6 +7,8 @@ services:
     environment:
       PROXER_LISTEN_ADDR: ":8080"
       PROXER_PUBLIC_BASE_URL: "http://localhost:18080"
+      PROXER_PUBLIC_SIGNUP_ENABLED: "true"
+      PROXER_PUBLIC_SIGNUP_RPM: "60"
       PROXER_AGENT_TOKEN: "dev-agent-token"
       PROXER_DEV_MODE: "true"
       PROXER_REQUEST_TIMEOUT: "30s"
@@ -25,6 +27,10 @@ services:
       PROXER_SQLITE_PATH: "/data/proxer.db"
       PROXER_MEMBER_WRITE_ENABLED: "true"
       PROXER_TLS_KEY_ENCRYPTION_KEY: "dev-change-me"
+      PROXER_PUBLIC_DOWNLOAD_CACHE_TTL: "15m"
+      PROXER_GITHUB_RELEASE_REPO: ""
+      PROXER_GITHUB_RELEASE_TAG: ""
+      PROXER_GITHUB_TOKEN: ""
     ports:
       - "18080:8080"
     volumes:

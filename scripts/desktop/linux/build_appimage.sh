@@ -42,9 +42,11 @@ SAFE_VERSION="$(printf '%s' "$APP_VERSION" | tr -c 'A-Za-z0-9._-' '-')"
 OUT_PATH="$BUILD_DIR/proxer-agent-${SAFE_VERSION}-${APPIMAGE_ARCH}.AppImage"
 DESKTOP_PATH="$APPDIR/${APP_ID}.desktop"
 ICON_PATH="$APPDIR/${APP_ID}.svg"
+METADATA_PATH="$APPDIR/usr/share/metainfo/${APP_ID}.appdata.xml"
 
 rm -rf "$APPDIR"
 mkdir -p "$APPDIR/usr/bin"
+mkdir -p "$APPDIR/usr/share/metainfo"
 
 echo "building proxer-agent linux binary (wails shell enabled)"
 GOOS=linux GOARCH="$GOARCH" CGO_ENABLED=1 go build -trimpath -tags wails -o "$APPDIR/usr/bin/proxer-agent" ./cmd/agent
@@ -68,10 +70,26 @@ Type=Application
 Name=${APP_NAME}
 Exec=proxer-agent gui
 Icon=${APP_ID}
-Categories=Network;Development;
+Categories=Development;
+Keywords=localhost;tunnel;proxy;routing;
 Terminal=false
 Comment=Secure localhost routing and connector runtime
 DESKTOP
+
+cat > "$METADATA_PATH" <<APPDATA
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>${APP_ID}</id>
+  <name>${APP_NAME}</name>
+  <summary>Secure localhost routing and connector runtime</summary>
+  <description>
+    <p>Proxer Agent pairs with the Proxer gateway and forwards HTTP/HTTPS traffic to local services.</p>
+  </description>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>LicenseRef-proprietary</project_license>
+  <launchable type="desktop-id">${APP_ID}.desktop</launchable>
+</component>
+APPDATA
 
 cat > "$ICON_PATH" <<'SVG'
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">

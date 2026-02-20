@@ -1378,6 +1378,357 @@ func mustProxyRequest(t *testing.T, url string, expectedService string) string {
 	return payload
 }
 
+func TestPublicSignupDisabledReturns403(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	gatewayCfg := gateway.Config{
+		ListenAddr:             "127.0.0.1:0",
+		AgentToken:             "test-token",
+		PublicBaseURL:          "http://localhost:8080",
+		RequestTimeout:         5 * time.Second,
+		DevMode:                false,
+		PublicSignupEnabled:    false,
+		PublicSignupRPM:        30,
+		PublicDownloadCacheTTL: 5 * time.Minute,
+	}
+	gatewayServer := gateway.NewServer(gatewayCfg, log.New(io.Discard, "", 0))
+	gatewayErrCh := make(chan error, 1)
+	go func() {
+		gatewayErrCh <- gatewayServer.Start(ctx)
+	}()
+
+	gatewayAddr, err := waitForGatewayAddr(gatewayServer, 5*time.Second)
+	if err != nil {
+		t.Fatalf("gateway did not publish a listener address: %v", err)
+	}
+	if err := waitForHTTP(fmt.Sprintf("http://%s/api/health", gatewayAddr), 5*time.Second); err != nil {
+		t.Fatalf("gateway health never became ready: %v", err)
+	}
+
+	mustPostJSONStatus(t, http.DefaultClient, fmt.Sprintf("http://%s/api/public/signup", gatewayAddr), map[string]any{
+		"username": "signup_user",
+		"password": "signup_pass_123",
+	}, http.StatusForbidden)
+
+	cancel()
+	select {
+	case err := <-gatewayErrCh:
+		if err != nil {
+			t.Fatalf("gateway returned error on shutdown: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("timeout waiting for gateway shutdown")
+	}
+}
+
+func TestPublicSignupCreatesTenantAdminAndSession(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	gatewayCfg := gateway.Config{
+		ListenAddr:             "127.0.0.1:0",
+		AgentToken:             "test-token",
+		PublicBaseURL:          "http://localhost:8080",
+		RequestTimeout:         5 * time.Second,
+		DevMode:                true,
+		PublicSignupEnabled:    true,
+		PublicSignupRPM:        60,
+		PublicDownloadCacheTTL: 5 * time.Minute,
+	}
+	gatewayServer := gateway.NewServer(gatewayCfg, log.New(io.Discard, "", 0))
+	gatewayErrCh := make(chan error, 1)
+	go func() {
+		gatewayErrCh <- gatewayServer.Start(ctx)
+	}()
+
+	gatewayAddr, err := waitForGatewayAddr(gatewayServer, 5*time.Second)
+	if err != nil {
+		t.Fatalf("gateway did not publish a listener address: %v", err)
+	}
+	if err := waitForHTTP(fmt.Sprintf("http://%s/api/health", gatewayAddr), 5*time.Second); err != nil {
+		t.Fatalf("gateway health never became ready: %v", err)
+	}
+
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("create cookie jar: %v", err)
+	}
+	client := &http.Client{Jar: jar}
+
+	reqBody, _ := json.Marshal(map[string]any{
+		"username": "new_tenant_admin",
+		"password": "signup_pass_123",
+	})
+	resp, err := client.Post(fmt.Sprintf("http://%s/api/public/signup", gatewayAddr), "application/json", bytes.NewReader(reqBody))
+	if err != nil {
+		t.Fatalf("public signup request failed: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 201 from public signup, got %d body=%s", resp.StatusCode, string(body))
+	}
+	var signupPayload struct {
+		User struct {
+			Username string `json:"username"`
+			Role     string `json:"role"`
+			TenantID string `json:"tenant_id"`
+		} `json:"user"`
+		Assignment struct {
+			PlanID string `json:"plan_id"`
+		} `json:"assignment"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&signupPayload); err != nil {
+		t.Fatalf("decode signup payload: %v", err)
+	}
+	if signupPayload.User.Role != gateway.RoleTenantAdmin {
+		t.Fatalf("expected tenant_admin role, got %q", signupPayload.User.Role)
+	}
+	if signupPayload.Assignment.PlanID != "free" {
+		t.Fatalf("expected free plan assignment, got %q", signupPayload.Assignment.PlanID)
+	}
+	if signupPayload.User.TenantID == "" {
+		t.Fatalf("expected tenant id in signup payload")
+	}
+
+	meResp, err := client.Get(fmt.Sprintf("http://%s/api/auth/me", gatewayAddr))
+	if err != nil {
+		t.Fatalf("auth me request failed: %v", err)
+	}
+	defer meResp.Body.Close()
+	if meResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(meResp.Body)
+		t.Fatalf("expected 200 from /api/auth/me, got %d body=%s", meResp.StatusCode, string(body))
+	}
+
+	plansResp, err := client.Get(fmt.Sprintf("http://%s/api/public/plans", gatewayAddr))
+	if err != nil {
+		t.Fatalf("public plans request failed: %v", err)
+	}
+	defer plansResp.Body.Close()
+	if plansResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(plansResp.Body)
+		t.Fatalf("expected 200 from /api/public/plans, got %d body=%s", plansResp.StatusCode, string(body))
+	}
+	var plansPayload struct {
+		Plans []struct {
+			ID              string  `json:"id"`
+			PriceMonthlyUSD float64 `json:"price_monthly_usd"`
+		} `json:"plans"`
+	}
+	if err := json.NewDecoder(plansResp.Body).Decode(&plansPayload); err != nil {
+		t.Fatalf("decode plans payload: %v", err)
+	}
+	var sawPro bool
+	for _, plan := range plansPayload.Plans {
+		if plan.ID == "pro" {
+			sawPro = true
+			if plan.PriceMonthlyUSD <= 0 {
+				t.Fatalf("expected public pro plan monthly price > 0, got %v", plan.PriceMonthlyUSD)
+			}
+		}
+	}
+	if !sawPro {
+		t.Fatalf("expected pro plan in public plans payload")
+	}
+
+	cancel()
+	select {
+	case err := <-gatewayErrCh:
+		if err != nil {
+			t.Fatalf("gateway returned error on shutdown: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("timeout waiting for gateway shutdown")
+	}
+}
+
+func TestPublicSignupSlugCollisionAddsSuffix(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	gatewayCfg := gateway.Config{
+		ListenAddr:             "127.0.0.1:0",
+		AgentToken:             "test-token",
+		PublicBaseURL:          "http://localhost:8080",
+		RequestTimeout:         5 * time.Second,
+		DevMode:                true,
+		PublicSignupEnabled:    true,
+		PublicSignupRPM:        60,
+		PublicDownloadCacheTTL: 5 * time.Minute,
+	}
+	gatewayServer := gateway.NewServer(gatewayCfg, log.New(io.Discard, "", 0))
+	gatewayErrCh := make(chan error, 1)
+	go func() {
+		gatewayErrCh <- gatewayServer.Start(ctx)
+	}()
+
+	gatewayAddr, err := waitForGatewayAddr(gatewayServer, 5*time.Second)
+	if err != nil {
+		t.Fatalf("gateway did not publish a listener address: %v", err)
+	}
+	if err := waitForHTTP(fmt.Sprintf("http://%s/api/health", gatewayAddr), 5*time.Second); err != nil {
+		t.Fatalf("gateway health never became ready: %v", err)
+	}
+
+	adminClient := loginAsAdmin(t, gatewayAddr)
+	mustPostJSONStatus(t, adminClient, fmt.Sprintf("http://%s/api/tenants", gatewayAddr), map[string]any{
+		"id":   "collision",
+		"name": "Collision",
+	}, http.StatusOK)
+
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("create cookie jar: %v", err)
+	}
+	client := &http.Client{Jar: jar}
+	body, _ := json.Marshal(map[string]any{
+		"username": "collision",
+		"password": "signup_pass_123",
+	})
+	resp, err := client.Post(fmt.Sprintf("http://%s/api/public/signup", gatewayAddr), "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("public signup request failed: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		payload, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 201, got %d body=%s", resp.StatusCode, string(payload))
+	}
+	var signupPayload struct {
+		User struct {
+			TenantID string `json:"tenant_id"`
+		} `json:"user"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&signupPayload); err != nil {
+		t.Fatalf("decode signup payload: %v", err)
+	}
+	if signupPayload.User.TenantID != "collision-2" {
+		t.Fatalf("expected tenant suffix collision-2, got %q", signupPayload.User.TenantID)
+	}
+
+	cancel()
+	select {
+	case err := <-gatewayErrCh:
+		if err != nil {
+			t.Fatalf("gateway returned error on shutdown: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("timeout waiting for gateway shutdown")
+	}
+}
+
+func TestPublicSignupRateLimitReturns429(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	gatewayCfg := gateway.Config{
+		ListenAddr:             "127.0.0.1:0",
+		AgentToken:             "test-token",
+		PublicBaseURL:          "http://localhost:8080",
+		RequestTimeout:         5 * time.Second,
+		DevMode:                true,
+		PublicSignupEnabled:    true,
+		PublicSignupRPM:        1,
+		PublicDownloadCacheTTL: 5 * time.Minute,
+	}
+	gatewayServer := gateway.NewServer(gatewayCfg, log.New(io.Discard, "", 0))
+	gatewayErrCh := make(chan error, 1)
+	go func() {
+		gatewayErrCh <- gatewayServer.Start(ctx)
+	}()
+
+	gatewayAddr, err := waitForGatewayAddr(gatewayServer, 5*time.Second)
+	if err != nil {
+		t.Fatalf("gateway did not publish a listener address: %v", err)
+	}
+	if err := waitForHTTP(fmt.Sprintf("http://%s/api/health", gatewayAddr), 5*time.Second); err != nil {
+		t.Fatalf("gateway health never became ready: %v", err)
+	}
+
+	mustPostJSONStatus(t, http.DefaultClient, fmt.Sprintf("http://%s/api/public/signup", gatewayAddr), map[string]any{
+		"username": "signup_rl_1",
+		"password": "signup_pass_123",
+	}, http.StatusCreated)
+	mustPostJSONStatus(t, http.DefaultClient, fmt.Sprintf("http://%s/api/public/signup", gatewayAddr), map[string]any{
+		"username": "signup_rl_2",
+		"password": "signup_pass_123",
+	}, http.StatusTooManyRequests)
+
+	cancel()
+	select {
+	case err := <-gatewayErrCh:
+		if err != nil {
+			t.Fatalf("gateway returned error on shutdown: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("timeout waiting for gateway shutdown")
+	}
+}
+
+func TestPublicDownloadsReturnsUnavailableWhenRepoNotConfigured(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	gatewayCfg := gateway.Config{
+		ListenAddr:             "127.0.0.1:0",
+		AgentToken:             "test-token",
+		PublicBaseURL:          "http://localhost:8080",
+		RequestTimeout:         5 * time.Second,
+		DevMode:                true,
+		PublicSignupEnabled:    true,
+		PublicSignupRPM:        30,
+		PublicDownloadCacheTTL: 5 * time.Minute,
+	}
+	gatewayServer := gateway.NewServer(gatewayCfg, log.New(io.Discard, "", 0))
+	gatewayErrCh := make(chan error, 1)
+	go func() {
+		gatewayErrCh <- gatewayServer.Start(ctx)
+	}()
+
+	gatewayAddr, err := waitForGatewayAddr(gatewayServer, 5*time.Second)
+	if err != nil {
+		t.Fatalf("gateway did not publish a listener address: %v", err)
+	}
+	if err := waitForHTTP(fmt.Sprintf("http://%s/api/health", gatewayAddr), 5*time.Second); err != nil {
+		t.Fatalf("gateway health never became ready: %v", err)
+	}
+
+	resp, err := http.Get(fmt.Sprintf("http://%s/api/public/downloads", gatewayAddr))
+	if err != nil {
+		t.Fatalf("request public downloads failed: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected status 200, got %d body=%s", resp.StatusCode, string(body))
+	}
+	var payload struct {
+		Available bool   `json:"available"`
+		Message   string `json:"message"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode downloads payload: %v", err)
+	}
+	if payload.Available {
+		t.Fatalf("expected unavailable downloads when repo is not configured")
+	}
+	if strings.TrimSpace(payload.Message) == "" {
+		t.Fatalf("expected unavailable downloads payload to include a message")
+	}
+
+	cancel()
+	select {
+	case err := <-gatewayErrCh:
+		if err != nil {
+			t.Fatalf("gateway returned error on shutdown: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("timeout waiting for gateway shutdown")
+	}
+}
+
 func containsHeaderValue(headers map[string][]string, key, expected string) bool {
 	values, ok := headers[key]
 	if !ok {

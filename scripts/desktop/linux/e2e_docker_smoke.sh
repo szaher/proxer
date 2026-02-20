@@ -49,6 +49,7 @@ DOCKER_ARGS+=(
       libayatana-appindicator3-dev \
       patchelf \
       desktop-file-utils \
+      appstream \
       nodejs \
       npm
 

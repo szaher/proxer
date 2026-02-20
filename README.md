@@ -29,6 +29,8 @@ Proxer is an ngrok-style gateway + host-agent system for routing public HTTP/HTT
   - hashed connector credentials
   - connector-bound route targets (`local_scheme`, `local_host`, `local_port`, `local_base_path`)
 - Built-in frontend served by the gateway from embedded static assets.
+- Public marketing website at `/` with plan cards, desktop download cards, and self-serve signup.
+- Authenticated workspace mounted at `/app`.
 - Pluggable state persistence with drivers:
   - `sqlite` (default, persisted)
   - `memory` (ephemeral)
@@ -39,9 +41,11 @@ Proxer is an ngrok-style gateway + host-agent system for routing public HTTP/HTT
 docker compose up --build
 ```
 
-Gateway UI:
+Gateway URLs:
 
-- [http://localhost:18080](http://localhost:18080)
+- Public site: [http://localhost:18080/](http://localhost:18080/)
+- Workspace app: [http://localhost:18080/app](http://localhost:18080/app)
+- Signup page (if enabled): [http://localhost:18080/signup](http://localhost:18080/signup)
 
 Default super admin login:
 
@@ -158,6 +162,12 @@ Non-secret settings are stored in `settings.json`. Secrets are stored via OS-bac
 - `GET /api/auth/me`
 - `POST /api/auth/register`
 
+### Public
+
+- `GET /api/public/plans`
+- `GET /api/public/downloads`
+- `POST /api/public/signup`
+
 ### Super Admin
 
 - `GET /api/admin/users`
@@ -226,6 +236,23 @@ Route payload supports:
 - SQLite migrations run at startup from `internal/store/sqlite_migrations/`.
 - Current SQLite persistence model stores versioned JSON snapshots in SQLite (single-node friendly default).
 
+## Public Signup and Downloads Config
+
+- `PROXER_PUBLIC_SIGNUP_ENABLED`
+  - Default: `true` when `PROXER_DEV_MODE=true`
+  - Default: `false` when `PROXER_DEV_MODE=false`
+- `PROXER_PUBLIC_SIGNUP_RPM` (per-IP signup rate limit)
+- `PROXER_GITHUB_RELEASE_REPO` (`owner/repo`, optional)
+- `PROXER_GITHUB_RELEASE_TAG` (optional, defaults to latest release)
+- `PROXER_GITHUB_TOKEN` (optional for private repos or higher API quota)
+- `PROXER_PUBLIC_DOWNLOAD_CACHE_TTL` (e.g. `15m`)
+
+Plan pricing fields are backend-managed and surfaced in admin/public API payloads:
+
+- `price_monthly_usd`
+- `price_annual_usd`
+- `public_order`
+
 ## Frontend Workspace
 
 A React + TypeScript + Vite source workspace for gateway UI is included in `web/`.
@@ -267,7 +294,7 @@ Detailed steps: `docs/native-agent-macos-release.md`.
 CI workflow:
 
 - `.github/workflows/desktop-macos.yml` builds macOS app artifacts on `workflow_dispatch` or `desktop-agent-v*` tags.
-  It uploads zipped app package with checksums, CycloneDX SBOMs, and release notes.
+  It uploads zipped app package with checksums, release manifest, CycloneDX SBOMs, and release notes.
 
 ### Linux packaging helper
 
@@ -284,7 +311,7 @@ Detailed steps: `docs/native-agent-linux-release.md`.
 CI workflow:
 
 - `.github/workflows/desktop-linux.yml` builds Linux AppImage artifacts on `workflow_dispatch` or `desktop-agent-v*` tags.
-  Artifacts include package, `checksums.txt`, CycloneDX SBOMs, `release-notes.md`, and smoke output.
+  Artifacts include package, `checksums.txt`, `release-manifest.json`, CycloneDX SBOMs, `release-notes.md`, and smoke output.
 
 ### Windows packaging helper
 
@@ -300,7 +327,7 @@ Detailed steps: `docs/native-agent-windows-release.md`.
 CI workflow:
 
 - `.github/workflows/desktop-windows.yml` builds Windows MSI artifacts on `workflow_dispatch` or `desktop-agent-v*` tags.
-  It validates install/uninstall smoke and publishes package + checksums + SBOM + release notes.
+  It validates install/uninstall smoke and publishes package + checksums + release manifest + SBOM + release notes.
 
 ## Environment Variables
 
@@ -326,11 +353,17 @@ CI workflow:
 - `PROXER_AGENT_TLS_SKIP_VERIFY`
 - `PROXER_AGENT_CA_FILE`
 - `PROXER_AGENT_LOG_LEVEL`
+- `PROXER_SKIP_SBOM`
+- `PROXER_LIGHTHOUSE_IMAGE`
+- `PROXER_LIGHTHOUSE_BASE_URL`
+- `PROXER_LIGHTHOUSE_ARTIFACT_DIR`
+- `PROXER_LIGHTHOUSE_MAX_ATTEMPTS`
 
 ## Tests
 
 ```bash
 go test ./...
+./tests/e2e/lighthouse_public.sh
 ```
 
 UI smoke (React app) with Playwright CLI:

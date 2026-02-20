@@ -40,24 +40,54 @@ done
   fi
 )
 
+MANIFEST_PATH="$TARGET_DIR_ABS/release-manifest.json"
+{
+  echo "{"
+  echo "  \"generated_at\": \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\","
+  echo "  \"commit\": \"${GITHUB_SHA:-unknown}\","
+  echo "  \"ref\": \"${GITHUB_REF_NAME:-unknown}\","
+  echo "  \"artifacts\": ["
+  for i in "${!COPIED_BASENAMES[@]}"; do
+    base="${COPIED_BASENAMES[$i]}"
+    size_bytes="$(wc -c < "$TARGET_DIR_ABS/$base" | tr -d ' ')"
+    sha256="$(awk -v b="$base" '$2==b{print $1}' "$TARGET_DIR_ABS/checksums.txt")"
+    comma=","
+    if [[ "$i" -eq "$((${#COPIED_BASENAMES[@]} - 1))" ]]; then
+      comma=""
+    fi
+    printf '    {"name":"%s","size_bytes":%s,"sha256":"%s"}%s\n' "$base" "$size_bytes" "$sha256" "$comma"
+  done
+  echo "  ]"
+  echo "}"
+} > "$MANIFEST_PATH"
+
 GOBIN="$(go env GOBIN)"
 if [[ -z "$GOBIN" ]]; then
   GOBIN="$(go env GOPATH)/bin"
 fi
-mkdir -p "$GOBIN"
-CYCLONEDX_GOMOD="$GOBIN/cyclonedx-gomod"
+SBOM_ENABLED="true"
+case "${PROXER_SKIP_SBOM:-false}" in
+  1|true|TRUE|yes|YES)
+    SBOM_ENABLED="false"
+    ;;
+esac
 
-if ! command -v cyclonedx-gomod >/dev/null 2>&1 && [[ ! -x "$CYCLONEDX_GOMOD" ]]; then
-  go install github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@v1.8.0
-fi
+if [[ "$SBOM_ENABLED" == "true" ]]; then
+  mkdir -p "$GOBIN"
+  CYCLONEDX_GOMOD="$GOBIN/cyclonedx-gomod"
 
-if command -v cyclonedx-gomod >/dev/null 2>&1; then
-  CYCLONEDX_GOMOD="$(command -v cyclonedx-gomod)"
-fi
-"$CYCLONEDX_GOMOD" mod -licenses -json -output "$TARGET_DIR_ABS/sbom-go.cdx.json"
+  if ! command -v cyclonedx-gomod >/dev/null 2>&1 && [[ ! -x "$CYCLONEDX_GOMOD" ]]; then
+    go install github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@v1.8.0
+  fi
 
-if [[ -f "agentweb/package-lock.json" ]]; then
-  (cd agentweb && npx --yes @cyclonedx/cyclonedx-npm --output-format JSON --output-file "$TARGET_DIR_ABS/sbom-npm.cdx.json")
+  if command -v cyclonedx-gomod >/dev/null 2>&1; then
+    CYCLONEDX_GOMOD="$(command -v cyclonedx-gomod)"
+  fi
+  "$CYCLONEDX_GOMOD" mod -licenses -json -output "$TARGET_DIR_ABS/sbom-go.cdx.json"
+
+  if [[ -f "agentweb/package-lock.json" ]]; then
+    (cd agentweb && npx --yes @cyclonedx/cyclonedx-npm --output-format JSON --output-file "$TARGET_DIR_ABS/sbom-npm.cdx.json")
+  fi
 fi
 
 TIMESTAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
@@ -75,8 +105,14 @@ TIMESTAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
   echo
   echo "## Included Metadata"
   echo "- checksums.txt (SHA-256)"
-  echo "- sbom-go.cdx.json"
+  echo "- release-manifest.json"
+  if [[ -f "$TARGET_DIR_ABS/sbom-go.cdx.json" ]]; then
+    echo "- sbom-go.cdx.json"
+  fi
   if [[ -f "$TARGET_DIR_ABS/sbom-npm.cdx.json" ]]; then
     echo "- sbom-npm.cdx.json"
+  fi
+  if [[ "$SBOM_ENABLED" == "false" ]]; then
+    echo "- SBOM generation skipped (PROXER_SKIP_SBOM=true)"
   fi
 } > "$TARGET_DIR_ABS/release-notes.md"

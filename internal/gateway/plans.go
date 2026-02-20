@@ -9,17 +9,44 @@ import (
 )
 
 type Plan struct {
-	ID            string    `json:"id"`
-	Name          string    `json:"name"`
-	Description   string    `json:"description"`
-	MaxRoutes     int       `json:"max_routes"`
-	MaxConnectors int       `json:"max_connectors"`
-	MaxRPS        float64   `json:"max_rps"`
-	MaxMonthlyGB  float64   `json:"max_monthly_gb"`
-	TLSEnabled    bool      `json:"tls_enabled"`
-	CreatedBy     string    `json:"created_by"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ID              string    `json:"id"`
+	Name            string    `json:"name"`
+	Description     string    `json:"description"`
+	MaxRoutes       int       `json:"max_routes"`
+	MaxConnectors   int       `json:"max_connectors"`
+	MaxRPS          float64   `json:"max_rps"`
+	MaxMonthlyGB    float64   `json:"max_monthly_gb"`
+	TLSEnabled      bool      `json:"tls_enabled"`
+	PriceMonthlyUSD float64   `json:"price_monthly_usd"`
+	PriceAnnualUSD  float64   `json:"price_annual_usd"`
+	PublicOrder     int       `json:"public_order"`
+	CreatedBy       string    `json:"created_by"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
+
+type planPricingDefaults struct {
+	PriceMonthlyUSD float64
+	PriceAnnualUSD  float64
+	PublicOrder     int
+}
+
+var defaultPlanPricingByID = map[string]planPricingDefaults{
+	"free": {
+		PriceMonthlyUSD: 0,
+		PriceAnnualUSD:  0,
+		PublicOrder:     1,
+	},
+	"pro": {
+		PriceMonthlyUSD: 20,
+		PriceAnnualUSD:  200,
+		PublicOrder:     2,
+	},
+	"business": {
+		PriceMonthlyUSD: 100,
+		PriceAnnualUSD:  1000,
+		PublicOrder:     3,
+	},
 }
 
 type TenantPlanAssignment struct {
@@ -54,43 +81,52 @@ func NewPlanStore() *PlanStore {
 	now := time.Now().UTC()
 	plans := map[string]Plan{
 		"free": {
-			ID:            "free",
-			Name:          "Free",
-			Description:   "Starter plan",
-			MaxRoutes:     5,
-			MaxConnectors: 2,
-			MaxRPS:        10,
-			MaxMonthlyGB:  10,
-			TLSEnabled:    false,
-			CreatedBy:     "system",
-			CreatedAt:     now,
-			UpdatedAt:     now,
+			ID:              "free",
+			Name:            "Free",
+			Description:     "Starter plan",
+			MaxRoutes:       5,
+			MaxConnectors:   2,
+			MaxRPS:          10,
+			MaxMonthlyGB:    10,
+			TLSEnabled:      false,
+			PriceMonthlyUSD: 0,
+			PriceAnnualUSD:  0,
+			PublicOrder:     1,
+			CreatedBy:       "system",
+			CreatedAt:       now,
+			UpdatedAt:       now,
 		},
 		"pro": {
-			ID:            "pro",
-			Name:          "Pro",
-			Description:   "Professional plan",
-			MaxRoutes:     50,
-			MaxConnectors: 10,
-			MaxRPS:        100,
-			MaxMonthlyGB:  500,
-			TLSEnabled:    true,
-			CreatedBy:     "system",
-			CreatedAt:     now,
-			UpdatedAt:     now,
+			ID:              "pro",
+			Name:            "Pro",
+			Description:     "Professional plan",
+			MaxRoutes:       50,
+			MaxConnectors:   10,
+			MaxRPS:          100,
+			MaxMonthlyGB:    500,
+			TLSEnabled:      true,
+			PriceMonthlyUSD: 20,
+			PriceAnnualUSD:  200,
+			PublicOrder:     2,
+			CreatedBy:       "system",
+			CreatedAt:       now,
+			UpdatedAt:       now,
 		},
 		"business": {
-			ID:            "business",
-			Name:          "Business",
-			Description:   "Business scale plan",
-			MaxRoutes:     250,
-			MaxConnectors: 50,
-			MaxRPS:        500,
-			MaxMonthlyGB:  5000,
-			TLSEnabled:    true,
-			CreatedBy:     "system",
-			CreatedAt:     now,
-			UpdatedAt:     now,
+			ID:              "business",
+			Name:            "Business",
+			Description:     "Business scale plan",
+			MaxRoutes:       250,
+			MaxConnectors:   50,
+			MaxRPS:          500,
+			MaxMonthlyGB:    5000,
+			TLSEnabled:      true,
+			PriceMonthlyUSD: 100,
+			PriceAnnualUSD:  1000,
+			PublicOrder:     3,
+			CreatedBy:       "system",
+			CreatedAt:       now,
+			UpdatedAt:       now,
 		},
 	}
 	return &PlanStore{
@@ -108,7 +144,12 @@ func (s *PlanStore) ListPlans() []Plan {
 	for _, plan := range s.plans {
 		plans = append(plans, plan)
 	}
-	sort.Slice(plans, func(i, j int) bool { return plans[i].ID < plans[j].ID })
+	sort.Slice(plans, func(i, j int) bool {
+		if plans[i].PublicOrder == plans[j].PublicOrder {
+			return plans[i].ID < plans[j].ID
+		}
+		return plans[i].PublicOrder < plans[j].PublicOrder
+	})
 	return plans
 }
 
@@ -138,6 +179,12 @@ func (s *PlanStore) UpsertPlan(input Plan) (Plan, error) {
 	if input.MaxRPS <= 0 || input.MaxMonthlyGB <= 0 {
 		return Plan{}, fmt.Errorf("max rps/monthly gb must be > 0")
 	}
+	if input.PriceMonthlyUSD < 0 || input.PriceAnnualUSD < 0 {
+		return Plan{}, fmt.Errorf("plan pricing must be >= 0")
+	}
+	if input.PublicOrder < 0 {
+		return Plan{}, fmt.Errorf("public_order must be >= 0")
+	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -154,9 +201,20 @@ func (s *PlanStore) UpsertPlan(input Plan) (Plan, error) {
 	existing.MaxRPS = input.MaxRPS
 	existing.MaxMonthlyGB = input.MaxMonthlyGB
 	existing.TLSEnabled = input.TLSEnabled
+	existing.PriceMonthlyUSD = input.PriceMonthlyUSD
+	existing.PriceAnnualUSD = input.PriceAnnualUSD
+	existing.PublicOrder = input.PublicOrder
 	existing.CreatedBy = strings.TrimSpace(input.CreatedBy)
 	if existing.CreatedBy == "" {
 		existing.CreatedBy = "system"
+	}
+	if defaults, ok := defaultPlanPricingByID[planID]; ok &&
+		existing.PriceMonthlyUSD == 0 &&
+		existing.PriceAnnualUSD == 0 &&
+		existing.PublicOrder == 0 {
+		existing.PriceMonthlyUSD = defaults.PriceMonthlyUSD
+		existing.PriceAnnualUSD = defaults.PriceAnnualUSD
+		existing.PublicOrder = defaults.PublicOrder
 	}
 	existing.UpdatedAt = now
 	s.plans[planID] = existing

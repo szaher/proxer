@@ -25,14 +25,17 @@ type adminUpdateUserRequest struct {
 }
 
 type planUpsertRequest struct {
-	ID            string  `json:"id"`
-	Name          string  `json:"name"`
-	Description   string  `json:"description"`
-	MaxRoutes     int     `json:"max_routes"`
-	MaxConnectors int     `json:"max_connectors"`
-	MaxRPS        float64 `json:"max_rps"`
-	MaxMonthlyGB  float64 `json:"max_monthly_gb"`
-	TLSEnabled    bool    `json:"tls_enabled"`
+	ID              string   `json:"id"`
+	Name            string   `json:"name"`
+	Description     string   `json:"description"`
+	MaxRoutes       int      `json:"max_routes"`
+	MaxConnectors   int      `json:"max_connectors"`
+	MaxRPS          float64  `json:"max_rps"`
+	MaxMonthlyGB    float64  `json:"max_monthly_gb"`
+	TLSEnabled      bool     `json:"tls_enabled"`
+	PriceMonthlyUSD *float64 `json:"price_monthly_usd,omitempty"`
+	PriceAnnualUSD  *float64 `json:"price_annual_usd,omitempty"`
+	PublicOrder     *int     `json:"public_order,omitempty"`
 }
 
 type assignTenantPlanRequest struct {
@@ -192,6 +195,10 @@ func (s *Server) handleAdminStats(w http.ResponseWriter, r *http.Request) {
 		monthlyUsage = append(monthlyUsage, s.planStore.GetUsage(tenant.ID, ""))
 	}
 	sort.Slice(monthlyUsage, func(i, j int) bool { return monthlyUsage[i].TenantID < monthlyUsage[j].TenantID })
+	funnelAnalytics := map[string]any{}
+	if s.funnelAnalytics != nil {
+		funnelAnalytics = s.funnelAnalytics.Summary()
+	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"generated_at":      time.Now().UTC().Format(time.RFC3339),
@@ -204,6 +211,7 @@ func (s *Server) handleAdminStats(w http.ResponseWriter, r *http.Request) {
 		"monthly_usage":     monthlyUsage,
 		"plan_assignments":  s.planStore.ListAssignments(),
 		"active_tls_certs":  s.tlsStore.ActiveCertificateCount(),
+		"funnel_analytics":  funnelAnalytics,
 		"storage_driver":    s.cfg.StorageDriver,
 		"uptime_seconds":    int(time.Since(s.startedAt).Seconds()),
 	})
@@ -287,17 +295,7 @@ func (s *Server) handleAdminPlans(w http.ResponseWriter, r *http.Request) {
 		if !s.decodeJSON(w, r, &request, "plan payload") {
 			return
 		}
-		plan, err := s.planStore.UpsertPlan(Plan{
-			ID:            request.ID,
-			Name:          request.Name,
-			Description:   request.Description,
-			MaxRoutes:     request.MaxRoutes,
-			MaxConnectors: request.MaxConnectors,
-			MaxRPS:        request.MaxRPS,
-			MaxMonthlyGB:  request.MaxMonthlyGB,
-			TLSEnabled:    request.TLSEnabled,
-			CreatedBy:     user.Username,
-		})
+		plan, err := s.planStore.UpsertPlan(s.buildPlanInput(request.ID, request, user.Username))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -336,17 +334,7 @@ func (s *Server) handleAdminPlanByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	request.ID = planID
-	plan, err := s.planStore.UpsertPlan(Plan{
-		ID:            request.ID,
-		Name:          request.Name,
-		Description:   request.Description,
-		MaxRoutes:     request.MaxRoutes,
-		MaxConnectors: request.MaxConnectors,
-		MaxRPS:        request.MaxRPS,
-		MaxMonthlyGB:  request.MaxMonthlyGB,
-		TLSEnabled:    request.TLSEnabled,
-		CreatedBy:     user.Username,
-	})
+	plan, err := s.planStore.UpsertPlan(s.buildPlanInput(request.ID, request, user.Username))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -356,6 +344,42 @@ func (s *Server) handleAdminPlanByID(w http.ResponseWriter, r *http.Request) {
 		"plan":    plan,
 	})
 	s.persistState()
+}
+
+func (s *Server) buildPlanInput(planID string, request planUpsertRequest, createdBy string) Plan {
+	planID = normalizeIdentifier(planID)
+	existing, exists := s.planStore.GetPlan(planID)
+	priceMonthly := 0.0
+	priceAnnual := 0.0
+	publicOrder := 0
+	if exists {
+		priceMonthly = existing.PriceMonthlyUSD
+		priceAnnual = existing.PriceAnnualUSD
+		publicOrder = existing.PublicOrder
+	}
+	if request.PriceMonthlyUSD != nil {
+		priceMonthly = *request.PriceMonthlyUSD
+	}
+	if request.PriceAnnualUSD != nil {
+		priceAnnual = *request.PriceAnnualUSD
+	}
+	if request.PublicOrder != nil {
+		publicOrder = *request.PublicOrder
+	}
+	return Plan{
+		ID:              planID,
+		Name:            request.Name,
+		Description:     request.Description,
+		MaxRoutes:       request.MaxRoutes,
+		MaxConnectors:   request.MaxConnectors,
+		MaxRPS:          request.MaxRPS,
+		MaxMonthlyGB:    request.MaxMonthlyGB,
+		TLSEnabled:      request.TLSEnabled,
+		PriceMonthlyUSD: priceMonthly,
+		PriceAnnualUSD:  priceAnnual,
+		PublicOrder:     publicOrder,
+		CreatedBy:       createdBy,
+	}
 }
 
 func (s *Server) handleAdminTenantsSubresource(w http.ResponseWriter, r *http.Request) {

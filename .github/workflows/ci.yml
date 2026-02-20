@@ -166,3 +166,52 @@ jobs:
       - name: Stop gateway
         if: always()
         run: docker compose down -v
+
+  lighthouse-public:
+    name: Lighthouse Public Pages
+    runs-on: ubuntu-latest
+    needs:
+      - go-test
+      - web-build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Start gateway
+        run: docker compose up -d --build gateway
+
+      - name: Wait for gateway
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:18080/ >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Gateway did not become ready in time" >&2
+          docker compose logs --no-color gateway || true
+          exit 1
+
+      - name: Run Lighthouse public audit
+        run: ./tests/e2e/lighthouse_public.sh
+
+      - name: Upload Lighthouse artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-public
+          path: output/lighthouse
+          if-no-files-found: ignore
+
+      - name: Print gateway logs on failure
+        if: failure()
+        run: docker compose logs --no-color gateway
+
+      - name: Stop gateway
+        if: always()
+        run: docker compose down -v

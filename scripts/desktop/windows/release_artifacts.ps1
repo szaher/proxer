@@ -26,37 +26,55 @@ foreach ($artifact in $Artifacts) {
 }
 
 $checksumLines = @()
+$manifestArtifacts = @()
 foreach ($item in $copied) {
     $hash = Get-FileHash -Path $item -Algorithm SHA256
-    $checksumLines += "{0}  {1}" -f $hash.Hash.ToLowerInvariant(), (Split-Path $item -Leaf)
+    $name = Split-Path $item -Leaf
+    $checksumLines += "{0}  {1}" -f $hash.Hash.ToLowerInvariant(), $name
+    $manifestArtifacts += [ordered]@{
+        name       = $name
+        size_bytes = (Get-Item $item).Length
+        sha256     = $hash.Hash.ToLowerInvariant()
+    }
 }
 $checksumLines | Set-Content -Path (Join-Path $targetFull "checksums.txt") -Encoding UTF8
 
-$gobin = go env GOBIN
-if ([string]::IsNullOrWhiteSpace($gobin)) {
-    $gopath = go env GOPATH
-    $gobin = Join-Path $gopath "bin"
+$manifest = [ordered]@{
+    generated_at = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+    commit       = if ([string]::IsNullOrWhiteSpace($env:GITHUB_SHA)) { "unknown" } else { $env:GITHUB_SHA }
+    ref          = if ([string]::IsNullOrWhiteSpace($env:GITHUB_REF_NAME)) { "unknown" } else { $env:GITHUB_REF_NAME }
+    artifacts    = $manifestArtifacts
 }
-if (-not (Test-Path $gobin)) {
-    New-Item -ItemType Directory -Force -Path $gobin | Out-Null
-}
-$cyclonedx = Join-Path $gobin "cyclonedx-gomod.exe"
-if (-not (Test-Path $cyclonedx)) {
-    go install github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@v1.8.0
-}
-& $cyclonedx mod -licenses -json -output (Join-Path $targetFull "sbom-go.cdx.json")
-if ($LASTEXITCODE -ne 0) {
-    throw "failed to generate go SBOM"
-}
+$manifest | ConvertTo-Json -Depth 5 | Set-Content -Path (Join-Path $targetFull "release-manifest.json") -Encoding UTF8
 
-if (Test-Path "agentweb/package-lock.json") {
-    Push-Location agentweb
-    npx --yes @cyclonedx/cyclonedx-npm --output-format JSON --output-file (Join-Path $targetFull "sbom-npm.cdx.json")
-    if ($LASTEXITCODE -ne 0) {
-        Pop-Location
-        throw "failed to generate npm SBOM"
+$skipSbom = @("1", "true", "yes") -contains (($env:PROXER_SKIP_SBOM ?? "").ToLowerInvariant())
+if (-not $skipSbom) {
+    $gobin = go env GOBIN
+    if ([string]::IsNullOrWhiteSpace($gobin)) {
+        $gopath = go env GOPATH
+        $gobin = Join-Path $gopath "bin"
     }
-    Pop-Location
+    if (-not (Test-Path $gobin)) {
+        New-Item -ItemType Directory -Force -Path $gobin | Out-Null
+    }
+    $cyclonedx = Join-Path $gobin "cyclonedx-gomod.exe"
+    if (-not (Test-Path $cyclonedx)) {
+        go install github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@v1.8.0
+    }
+    & $cyclonedx mod -licenses -json -output (Join-Path $targetFull "sbom-go.cdx.json")
+    if ($LASTEXITCODE -ne 0) {
+        throw "failed to generate go SBOM"
+    }
+
+    if (Test-Path "agentweb/package-lock.json") {
+        Push-Location agentweb
+        npx --yes @cyclonedx/cyclonedx-npm --output-format JSON --output-file (Join-Path $targetFull "sbom-npm.cdx.json")
+        if ($LASTEXITCODE -ne 0) {
+            Pop-Location
+            throw "failed to generate npm SBOM"
+        }
+        Pop-Location
+    }
 }
 
 $timestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
@@ -77,8 +95,14 @@ foreach ($item in $copied) {
 $lines += ""
 $lines += "## Included Metadata"
 $lines += "- checksums.txt (SHA-256)"
-$lines += "- sbom-go.cdx.json"
+$lines += "- release-manifest.json"
+if (Test-Path (Join-Path $targetFull "sbom-go.cdx.json")) {
+    $lines += "- sbom-go.cdx.json"
+}
 if (Test-Path (Join-Path $targetFull "sbom-npm.cdx.json")) {
     $lines += "- sbom-npm.cdx.json"
+}
+if ($skipSbom) {
+    $lines += "- SBOM generation skipped (PROXER_SKIP_SBOM=true)"
 }
 $lines | Set-Content -Path $releasePath -Encoding UTF8

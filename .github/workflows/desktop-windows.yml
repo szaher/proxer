@@ -55,10 +55,34 @@ jobs:
         run: |
           $msi = (Get-ChildItem output/desktop/windows/*.msi | Select-Object -First 1).FullName
           $smoke = (Resolve-Path output/desktop/windows/smoke-help.txt).Path
-          ./scripts/desktop/windows/release_artifacts.ps1 -TargetDir "output/desktop/windows/release" -Artifacts @($msi, $smoke)
+          $status = (Resolve-Path output/desktop/windows/smoke-status.json).Path
+          ./scripts/desktop/windows/release_artifacts.ps1 -TargetDir "output/desktop/windows/release" -Artifacts @($msi, $smoke, $status)
+
+      - name: Verify release metadata files
+        shell: pwsh
+        run: |
+          $required = @(
+            "output/desktop/windows/release/checksums.txt",
+            "output/desktop/windows/release/release-manifest.json",
+            "output/desktop/windows/release/release-notes.md",
+            "output/desktop/windows/release/sbom-go.cdx.json"
+          )
+          foreach ($path in $required) {
+            if (-not (Test-Path $path)) {
+              throw "missing release metadata file: $path"
+            }
+          }
 
       - name: Upload MSI artifact
         uses: actions/upload-artifact@v4
         with:
           name: proxer-agent-windows-msi
           path: output/desktop/windows/release/
+
+      - name: Upload Windows smoke diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: proxer-agent-windows-smoke-diagnostics
+          path: output/desktop/windows/
+          if-no-files-found: ignore

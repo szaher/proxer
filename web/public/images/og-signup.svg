@@ -1,0 +1,17 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="630" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0E7490" />
+      <stop offset="1" stop-color="#0F172A" />
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" rx="24" fill="url(#bg)" />
+  <circle cx="980" cy="510" r="250" fill="#14B8A6" fill-opacity="0.2" />
+  <circle cx="240" cy="120" r="180" fill="#F97316" fill-opacity="0.2" />
+  <text x="92" y="228" fill="#ffffff" font-family="Avenir Next, Segoe UI, sans-serif" font-size="68" font-weight="700">Create your Proxer workspace</text>
+  <text x="92" y="294" fill="#E2E8F0" font-family="Avenir Next, Segoe UI, sans-serif" font-size="36" font-weight="500">Pair a connector and publish localhost apps in minutes.</text>
+  <rect x="92" y="384" width="220" height="70" rx="35" fill="#14B8A6" />
+  <text x="136" y="429" fill="#ffffff" font-family="Avenir Next, Segoe UI, sans-serif" font-size="32" font-weight="600">Start Free</text>
+  <rect x="338" y="384" width="236" height="70" rx="35" fill="#FFFFFF" fill-opacity="0.14" />
+  <text x="378" y="429" fill="#ffffff" font-family="Avenir Next, Segoe UI, sans-serif" font-size="32" font-weight="600">Desktop Agent</text>
+</svg>
