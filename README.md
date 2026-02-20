@@ -54,6 +54,28 @@ Default super admin login:
 
 State is persisted to SQLite in Docker volume `gateway-data` (`/data/proxer.db` in the container).
 
+## Production Run (Release Images)
+
+Use published GHCR images (no local build) with the production compose file:
+
+```bash
+cp .env.production.example .env.production
+# edit .env.production values for your environment
+docker compose --env-file .env.production -f docker-compose.prod.yml pull
+docker compose --env-file .env.production -f docker-compose.prod.yml up -d
+```
+
+Notes:
+
+- Default image tags are `latest` and are pulled on every `up` (`pull_policy: always`).
+- Gateway image: `ghcr.io/szaher/proxer/gateway:<tag>`
+- Agent image: `ghcr.io/szaher/proxer/agent:<tag>`
+- The `agent` service is optional and only runs when you enable the `demo-agent` profile:
+
+```bash
+docker compose --env-file .env.production -f docker-compose.prod.yml --profile demo-agent up -d
+```
+
 ## Host Agent Pairing Flow
 
 1. Login to the UI.
@@ -246,6 +268,19 @@ Route payload supports:
 - `PROXER_GITHUB_RELEASE_TAG` (optional, defaults to latest release)
 - `PROXER_GITHUB_TOKEN` (optional for private repos or higher API quota)
 - `PROXER_PUBLIC_DOWNLOAD_CACHE_TTL` (e.g. `15m`)
+
+## GitHub Release Pipelines
+
+- Desktop release assets (macOS/Linux/Windows) are built by:
+  - `.github/workflows/desktop-macos.yml`
+  - `.github/workflows/desktop-linux.yml`
+  - `.github/workflows/desktop-windows.yml`
+- Container images are published to GHCR by:
+  - `.github/workflows/release-containers.yml`
+- `release-containers.yml` publishes:
+  - `ghcr.io/<owner>/<repo>/gateway:<release-tag>`
+  - `ghcr.io/<owner>/<repo>/agent:<release-tag>`
+  - `latest` tags for non-prerelease releases
 
 Plan pricing fields are backend-managed and surfaced in admin/public API payloads:
 

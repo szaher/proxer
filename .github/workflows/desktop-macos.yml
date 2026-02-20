@@ -5,6 +5,12 @@ on:
   push:
     tags:
       - "desktop-agent-v*"
+  release:
+    types:
+      - published
+
+permissions:
+  contents: write
 
 jobs:
   build-macos-app:
@@ -71,6 +77,15 @@ jobs:
         with:
           name: proxer-agent-macos-app
           path: output/desktop/macos/release/
+
+      - name: Publish release assets
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.release.tag_name }}
+          files: |
+            output/desktop/macos/release/*
+          fail_on_unmatched_files: true
 
       - name: Upload macOS packaging diagnostics
         if: always()
